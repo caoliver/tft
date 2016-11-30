@@ -443,10 +443,35 @@ function read_tagset(tagset_directory, skip_kde)
       tagset_list_changed = true
       return newset
    end
+
+   local function change_archive(tagset, directory)
+      local txtfiles_pipe =
+	 io.popen('find '..directory..' -name \\*.txt')
+      for _,tuple in pairs(tagset.tags) do
+	 tuple.version = nil
+	 tuple.arch = nil
+	 tuple.build = nil
+	 tuple.description = nil
+      end
+      for descr_file in txtfiles_pipe:lines() do
+	 tag,version,arch,build =
+	    descr_file:match '/([^/]+)-([^/-]+)-([^/-]+)-([^/-]+).txt'
+	 if not tagset.tags[tag] then
+	    print('No tagfile record for '..tag..'.  Skipping!')
+	 else
+	    tagset.tags[tag].version = version
+	    tagset.tags[tag].arch = arch
+	    tagset.tags[tag].build = build
+	    tagset.tags[tag].description = make_description(descr_file)
+	 end
+      end
+      txtfiles_pipe:close()
+   end
    
    local tagset = {
       tags = {}, categories = {},
-      directory = tagset_directory, write = write_tagset, show=show_like,
+      directory = tagset_directory, archive_directory,
+      write = write_tagset, show=show_like, change_archive=change_archive,
       forget=forget_changes, set=set_state, like=like, describe=describe,
       compare=compare, missing=missing, clone=clone }
    local category_pipe = io.popen('find '..tagset_directory..
@@ -475,21 +500,7 @@ function read_tagset(tagset_directory, skip_kde)
       tagfile:close()
       -- Now try to enumerate txt files for packages.  If this is
       -- just a tagset directory, then there will be none.
-      local txtfiles_pipe =
-	 io.popen('find '..category_directory..' -name \\*.txt')
-      for descr_file in txtfiles_pipe:lines() do
-	 tag,version,arch,build =
-	    descr_file:match '/([^/]+)-([^/-]+)-([^/-]+)-([^/-]+).txt'
-	 if not tagset.tags[tag] then
-	    print('No tagfile record for '..tag..'.  Skipping!')
-	 else
-	    tagset.tags[tag].version = version
-	    tagset.tags[tag].arch = arch
-	    tagset.tags[tag].build = build
-	    tagset.tags[tag].description = make_description(descr_file)
-	 end
-      end
-      txtfiles_pipe:close()
+      change_archive(tagset, category_directory)
       ::next_directory::
    end
    category_pipe:close()
