@@ -138,7 +138,7 @@ function read_installation()
    local find = io.popen 'find /var/log/packages -type f'
    for package in find:lines() do
       local tag,version,arch,build =
-	 package:match '/([^/]-)-([^-]+)-([^-]+)-([^-]+)$'
+	 package:match '/([^/]+)%-([^-]+)%-([^-]+)%-([^-]+)$'
       if tag then
 	 local descr_lines
 
@@ -454,8 +454,8 @@ function read_tagset(tagset_directory, skip_kde)
 	 tuple.description = nil
       end
       for descr_file in txtfiles_pipe:lines() do
-	 tag,version,arch,build =
-	    descr_file:match '/([^/]+)-([^/-]+)-([^/-]+)-([^/-]+).txt'
+	 local tag,version,arch,build =
+	    descr_file:match '/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+).txt$'
 	 if not tagset.tags[tag] then
 	    print('No tagfile record for '..tag..'.  Skipping!')
 	 else
@@ -498,11 +498,11 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
       end
       tagfile:close()
-      -- Now try to enumerate txt files for packages.  If this is
-      -- just a tagset directory, then there will be none.
-      change_archive(tagset, category_directory)
       ::next_directory::
    end
+   -- Now try to enumerate txt files for packages.  If this is
+   -- just a tagset directory, then there will be none.
+   change_archive(tagset, tagset_directory)
    category_pipe:close()
    tagset_list_changed= true
    tagset_list[tagset] = true

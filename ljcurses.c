@@ -1,11 +1,6 @@
-#include <lua.h>
-#include <lualib.h>
-#include <lauxlib.h>
-#include <signal.h>
+#include "lua_head.h"
 #include <ncurses.h>
 #include <ctype.h>
-
-#define LUAFN(NAME) static int ljc_##NAME(lua_State *L)
 
 WINDOW *curwin;
 
@@ -346,13 +341,6 @@ LUAFN(box)
 }
 
 
-#define FN_ENTRY(NAME) { #NAME, ljc_##NAME }
-
-#define AT_NAME_PUT(name, cnst) \
-    lua_pushstring(L, #name);  \
-    lua_pushinteger(L, cnst);  \
-    lua_rawset(L, -3)
-
 typedef struct { const char *name; int value; } intconst;
 
 LUALIB_API int luaopen_ljcurses(lua_State *L)
@@ -458,12 +446,12 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
     lua_pushstring(L, "boxes");
     lua_newtable(L);
     // These aren't constants at compile time.  :-(
-    AT_NAME_PUT(vline,    ACS_VLINE);
-    AT_NAME_PUT(hline,    ACS_HLINE);
-    AT_NAME_PUT(urcorner, ACS_URCORNER);
-    AT_NAME_PUT(ulcorner, ACS_ULCORNER);
-    AT_NAME_PUT(lrcorner, ACS_LRCORNER);
-    AT_NAME_PUT(llcorner, ACS_LLCORNER);
+    AT_NAME_PUT_INT(vline,    ACS_VLINE);
+    AT_NAME_PUT_INT(hline,    ACS_HLINE);
+    AT_NAME_PUT_INT(urcorner, ACS_URCORNER);
+    AT_NAME_PUT_INT(ulcorner, ACS_ULCORNER);
+    AT_NAME_PUT_INT(lrcorner, ACS_LRCORNER);
+    AT_NAME_PUT_INT(llcorner, ACS_LLCORNER);
     lua_rawset(L, -3);
 
     lua_pushstring(L, "keys");
