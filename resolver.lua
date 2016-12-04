@@ -1,8 +1,16 @@
-local txzpat = '^||   Package:  '..
+local bad_offers = {
+   ['m17n-lib'] = {'libm.so.'},
+}
+
+local txzpat = '^||   Package:  '.. 
    '%./([^/]+)/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+).txz'
 local eoh = '++========================================'
 
-local util=require 'util'
+local function case_insensitive_less_than(a,b)
+   return string.lower(a) < string.lower(b)
+end
+
+local scanelf=(require 'scanelf').scan_elf
 
 function get_load_path(root)
    local path = {}
@@ -37,21 +45,23 @@ function read_manifest(archive_directory)
 	    state = 0
 	 else
 	    local dir,file = line:match('(.+)/([^/]+)$',49)
-	    if dir and (file:find('.so.',1,true) or
-			file:sub(-3) == '.so') then
-	       local assoc = associations[file]
+	    if dir and (file:sub(-3) == '.so' or
+			file:match('%.so%.[.0-9]+$')) then
+	       local stem = file:match '^([%a_%-]*[%a])'
+	       
+	       local assoc = associations[stem]
 	       if not assoc then
 		  assoc = {}
-		  associations[file] = assoc
+		  associations[stem] = assoc
 	       end
-	       assoc[package] = file
+	       table.insert(assoc, {file,package})
 	    end
 	 end
       end
+      ::cont::
    end
    return associations
 end
-
 
 function add_libraries(resolution_roots, libraries)
    local libraries = libraries or {}
@@ -65,7 +75,6 @@ function add_libraries(resolution_roots, libraries)
    return libraries
 end
 
--- This should be a C fn in util!
 function make_tmpdir()
    local pipe = io.popen 'mktemp -d 2>&-'
    local dirname
@@ -77,21 +86,6 @@ function make_tmpdir()
 end		   
 
 function process_elfs(directory, contents)
-   local pushback
-   local elftype
-   local interp
-   local proc = io.popen('readelf -dl / '..
-			    '$(find '..directory..' -type f) 2>&-')
-   local function getline()
-      local old = pushback
-      pushback = nil
-      return old or proc:read()
-   end
-   
-   local function ungetline(line)
-      pushback = line
-   end
-   
    local function expand_search_path(pathlist, origin)
       local result = {}
       pathlist = pathlist:match '%s*(.*[^%s])%s*'
@@ -110,64 +104,32 @@ function process_elfs(directory, contents)
    end
 
    contents = contents or { needed = {}, provided = {}, rpaths = {} }
-   
-   repeat
-      local state = 'start'
-      local scanners = {
-	 start = function(line)
-	    return line and 'file' or nil
-	 end,
 
-	 file = function(line)
-	    local file = line:match '^File: .*/(.*)'
-	    return 'elftype'
-	 end,
-
-	 elftype = function(line)
-	    if not line then return nil end
-	    if line == '' then return 'elftype' end
-	    elftype = line:match 'Elf file type is ([^ ]*)'
-	    if elftype then return 'interp' end
-	    if line == 'There are no program headers in this file.' then
-	       return 'start'
-	    end
-	    ungetline(line)
-	    return 'file'
-	 end,
-	 
-	 interp = function(line)
-	    if line == 'There is no dynamic section in this file.' then
-	       return 'start'
-	    end
-	    if line:match '^Dynamic section' then return 'dyns' end
-	    interp = line:match '%[Requesting program interpreter: (.*)%]'
-	    return 'interp'
-	 end,
-
-	 dyns = function(line)
-	    if line == '' or line == nil then
-	       ungetline(line)
-	       return false;
-	    end
-	    local dyntype, value = line:match '%((.*)%).*%[(.*)%]'
-	    if dyntype == 'SONAME' then
-	       insert.table(contents.provided, value)
-	    elseif dyntype == 'RPATH' or dyntype == 'RUNPATH' then
-	       for path in ipairs(expand_search_path(value)) do
-		  contents.rpaths[value] = true
-	       end
-	    elseif dyntype == 'NEEDED' then
-	       contents.needed[value] = true
-	    end
-	    return 'dyns'
+   local findproc = io.popen('find '..directory..' -type f 2>&-')
+   for binfile in findproc:lines() do
+      local elfspec = scanelf(binfile)
+      if elfspec then
+	 if elfspec.soname then
+	    table.insert(contents.provided, elfspec.soname)
 	 end
-      }
-      repeat
-	 local line = getline()
-	 state = scanners[state](line)
-      until not state
-   until state == nil
-   proc:close()
+	 -- What do we really want to do with these?
+	 if elfspec.rpath or elfspec.runpath then
+	    for _, path in
+	    ipairs(expand_search_path(elfspec.runpath or elfspec.rpath)) do
+	       contents.rpaths[path] = true;
+	    end
+	 end
+	 if elfspec.needed then
+	    for _, lib in ipairs(elfspec.needed) do
+	       if contents.needed[lib] then
+		  table.insert(contents.needed[lib], binfile)
+	       else
+		  contents.needed[lib] = { binfile }
+	       end
+	    end
+	 end
+      end
+   end
    return contents
 end
 
@@ -175,6 +137,69 @@ function expand_archive(archive_file, contents)
    os.execute('s=$(readlink -f '..archive_file..');cd '..tmpdir..
 		 ';tar xf $s')
    contents = process_elfs(tmpdir, contents)
+   -- Remove internally provided shared objects.
+   for _,provided in ipairs(contents.provided) do
+      contents.needed[provided] = nil
+   end
    os.execute('find $(readlink -f '..tmpdir..') -mindepth 1 -delete')
    return contents
+end
+
+function suggest_packages(needed, associations)
+   local function bad_offer(needed, offered)
+      local offer = bad_offers[offered]
+      print("Checking "..offered,needed)
+      if offer then
+	 for _, bad_match in ipairs(offer) do
+	    if needed:sub(1, #bad_match) == bad_match then
+	       return true
+	    end
+	 end
+      end
+      return false
+   end
+   local suggestions = {}
+   local nomatch = {}
+   for needed, needed_by in pairs(needed) do
+      local stem = needed:match '^([%a_%-]*[%a])'
+      local candidates = associations[stem]
+      if not candidates then
+	 nomatch[stem] = true;
+      else
+	 for _, candidate in ipairs(candidates) do
+	    if not bad_offer(needed, candidate[2]) then
+	       local suggestion = suggestions[candidate[2]]
+	       if not suggestion then
+		  suggestion = {}
+		  suggestions[candidate[2]] = suggestion
+	       end
+	       table.insert(suggestion,
+			    {needed, candidate[1], stem, needed_by})
+	       end
+	 end
+      end
+   end
+   local sorted = {}
+   for k,v in pairs(suggestions) do
+      table.sort(v, function(a,b)
+		    return case_insensitive_less_than(a[1],b[1]) end)
+      table.insert(sorted, {k,v})
+   end
+   table.sort(sorted, function(a,b)
+		 return case_insensitive_less_than(a[1],b[1]) end)
+   return sorted
+end
+
+function show_suggestions(suggestions, show_needers)
+   for _, suggestion in ipairs(suggestions) do
+      print(suggestion[1])
+      for _, libspec in ipairs(suggestion[2]) do
+	 print("    "..libspec[1],libspec[2],libspec[3])
+	 if show_needers then
+	    for _, needed_by in ipairs(libspec[4]) do
+	       print("         "..needed_by:sub(#tmpdir+1))
+	    end
+	 end
+      end
+   end
 end
