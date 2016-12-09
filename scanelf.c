@@ -162,9 +162,8 @@ LUAFN(scan_elf)
     if (!edata)
 	goto done;
     GElf_Dyn gdyn;
-    // Make and stash a table for DT_NEEDED entries
+    lua_pushstring(L, "needed");
     lua_newtable(L);
-    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
     int libnum = 1;
     for (int i = 0; gelf_getdyn(edata, i, &gdyn) == &gdyn; i++) {
 	switch(gdyn.d_tag) {
@@ -178,21 +177,18 @@ LUAFN(scan_elf)
 	    lua_pushstring(L, "runpath");
 	    break;
 	case DT_NEEDED:
-	    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 	    lua_pushstring(L, strtab + gdyn.d_un.d_val);
+	    // STACK: dt_value needed_table "needed" elf_table
 	    lua_rawseti(L, -2, libnum++);
-	    lua_pop(L, 1);
 	    continue;
 	default:
 	    continue;
 	}
 	lua_pushstring(L, strtab + gdyn.d_un.d_val);
-	lua_rawset(L, -3);
+	// STACK: dt_value dt_name needed_table "needed" elf_table
+	lua_rawset(L, -5);
     }
-    lua_pushstring(L, "needed");
-    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
     lua_rawset(L, -3);
-    luaL_unref(L, LUA_REGISTRYINDEX, ref);
     return_items = 1;
     
 done:
@@ -212,6 +208,8 @@ bugout:
     return 2;
 }
 
+typedef struct { const char *name; int value; } intconst;
+
 LUALIB_API int luaopen_scanelf(lua_State *L)
 {
     static const luaL_Reg funcptrs[] = {
@@ -220,6 +218,18 @@ LUALIB_API int luaopen_scanelf(lua_State *L)
 	{NULL, NULL}
     };
 
+    static intconst machines[] = {
+	{"AMD64", 62},
+	{"X86", 3},
+	{NULL, 0}
+    };
+
     luaL_register(L, "scanelf", funcptrs);
+    for (int i = 0; machines[i].name; i++) {
+        lua_pushstring(L, machines[i].name);
+        lua_pushinteger(L, machines[i].value);
+        lua_rawset(L, -3);
+    }
+    
     return 1;
 }
