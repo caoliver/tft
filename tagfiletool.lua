@@ -89,7 +89,7 @@ function read_installation()
 	 return descr_lines
       end
    end
-   
+
    local function compare(installation, tagset, ...)
       if check_other(tagset) then tagset:compare(installation, ...) end
    end
@@ -97,7 +97,7 @@ function read_installation()
    local function missing(installation, tagset)
       if check_other(tagset) then tagset:missing(installation) end
    end
-   
+
    local function like(installation, pattern)
       local set = {}
       for tag, _ in pairs(installation.tags) do
@@ -105,7 +105,7 @@ function read_installation()
       end
       return { set=set, show=show_matches, describe=describe }
    end
-   
+
    local function show_like(installation, pattern)
       local matches = {}
       for tag, tuple in pairs(installation.tags) do
@@ -132,7 +132,8 @@ function read_installation()
       end
    end
 
-   local installed = { show=show_like, like = like, tags={},
+   local installed = { type = 'installation',
+		       show=show_like, like = like, tags={},
 		       describe = describe, compare=compare,
 		       missing=missing }
    local find = io.popen 'find /var/log/packages -type f'
@@ -159,33 +160,19 @@ setmetatable(tagset_list, {__mode = 'k'})
 function read_tagset(tagset_directory, skip_kde)
    local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
 
-   local function now_undirty(tagset)
-      if tagset.dirty then
-	 tagset_list_changed = true
-	 tagset.dirty = nil
-      end
-   end
-   
-   local function now_dirty(tagset)
-      if not tagset.dirty then
-	 tagset_list_changed = true
-	 tagset.dirty = true
-      end
-   end
-   
    local function forget_changes(tagset, uncache)
-      now_undirty(tagset)
+      tagset.dirty = false
       for tag,tuple in pairs(tagset.tags) do
 	 if tuple.state ~= tuple.old_state then
 	    tuple.state = tuple.old_state
 	 end
-      end	 
+      end
       if uncache then
 	 tagset_list[tagset] = nil
 	 tagset_list_changed = true
       end
    end
-   
+
    local function like(tagset, pattern)
       local set = {}
       for tag, _ in pairs(tagset.tags) do
@@ -212,7 +199,7 @@ function read_tagset(tagset_directory, skip_kde)
 	 else
 	    if tuple.state ~= state  then
 	       tuple.state = state;
-	       now_dirty(tagset)
+	       tagset.dirty = true
 	    end
 	 end
       end
@@ -270,10 +257,6 @@ function read_tagset(tagset_directory, skip_kde)
 
    local function write_tagset(tagset, directory, NonADD_to_SKP)
       if not directory then print 'No directory given'; return; end
-      if os.execute('mkdir -p '..directory..' 2>&-') ~= 0 then
-	 print('Can\'t make directory '..directory)
-	 return
-      end
       for category, tags in pairs(tagset.categories) do
 	 local tagdir = directory..'/'..category
 	 os.execute('rm -rf '..tagdir)
@@ -296,7 +279,8 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
 	 tagfile:close()
 	 for _,tuple in pairs(tagset.tags) do tuple.old_state = tuple.state end
-	 now_undirty(tagset)
+	 tagset.dirty = false
+	 tagset.directory = directory
       end
    end
 
@@ -318,7 +302,7 @@ function read_tagset(tagset_directory, skip_kde)
 	 print '  No missing requirements!'
       end
    end
-   
+
    local function compare(tagset, thingie, show_version_changes,
 			  show_optional, inhibit_recommended)
       local function intersection_difference(a, b)
@@ -335,11 +319,11 @@ function read_tagset(tagset_directory, skip_kde)
 	    end
 	    return a and a.state ~= 'OPT' or b and b.state ~= 'OPT'
 	 end
-	 
+
 	 local only_a = {}
 	 local only_b = {}
 	 local common = {}
-	 for tag, tuple in pairs(a.tags) do	
+	 for tag, tuple in pairs(a.tags) do
 	    if check_states(tuple, b.tags[tag]) then
 	       table.insert(b.tags[tag] and common or only_a, tag)
 	    end
@@ -353,10 +337,10 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
 	 return common, only_a, only_b
       end
-   
-      local other='installation'
-      if thingie.categories then other='second tagset' end
-      print('Comparing tagset to '..other)
+
+      other_thing =
+	 thingie.type == 'tagset' and 'second tagset' or 'installation'
+      print('Comparing tagset to '..other_thing)
       local common, not_in_tagset, not_in_other =
 	 intersection_difference(thingie, tagset)
       local different_version = {}
@@ -378,13 +362,13 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
       end
       if #not_in_other > 0 then
-	 print('  Missing from '..other..':')
+	 print('Missing from '..other_thing..':')
 	 show_matches {set=not_in_other}
       else
-	 print('Nothing missing from '..other..'!')
+	 print('Nothing missing from '..other_thing..'!')
       end
       if #not_in_tagset > 0 then
-	 print('\n  Missing from tagset:')
+	 print('Missing from tagset:')
 	 show_matches {set=not_in_tagset}
       else
 	 print 'Nothing missing from tagset!'
@@ -421,9 +405,9 @@ function read_tagset(tagset_directory, skip_kde)
 	 return descr_lines
       end
    end
-   
+
    local function clone(tagset)
-      local newset = { 
+      local newset = {
       tags = {}, categories = {},
       directory = tagset_directory, write = write_tagset, show=show_like,
       forget=forget_changes, set=set_state, like=like, describe=describe,
@@ -467,8 +451,9 @@ function read_tagset(tagset_directory, skip_kde)
       end
       txtfiles_pipe:close()
    end
-   
+
    local tagset = {
+      type = 'tagset',
       tags = {}, categories = {},
       directory = tagset_directory, archive_directory,
       write = write_tagset, show=show_like, change_archive=change_archive,
