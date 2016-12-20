@@ -2,7 +2,10 @@
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include <gelf.h>
 #include <errno.h>
 #include <alloca.h>
@@ -14,7 +17,7 @@ static int architecture = 0;
 
 LUAFN(filter_on_machine)
 {
-    if (lua_isnone(L,1)) {
+    if (lua_isnoneornil(L,1)) {
 	architecture = 0;
 	return 0;
     }
@@ -100,7 +103,7 @@ LUAFN(scan_elf)
 	lua_pushstring(L, "shared library");
 	break;
     default:
-	lua_pushstring(L, "Unexpected elf type");
+	errmsg = "Unexpected elf type";
 	goto bugout;
     }
     lua_rawset(L, -3);
@@ -167,25 +170,39 @@ LUAFN(scan_elf)
     int libnum = 1;
     for (int i = 0; gelf_getdyn(edata, i, &gdyn) == &gdyn; i++) {
 	switch(gdyn.d_tag) {
+	case DT_NEEDED:
+	    lua_pushstring(L, strtab + gdyn.d_un.d_val);
+	    // STACK: dt_value needed_table "needed" elf_table
+	    lua_rawseti(L, -2, libnum++);
+	    continue;
 	case DT_SONAME:
 	    lua_pushstring(L, "soname");
-	    break;
+	    lua_pushstring(L, strtab + gdyn.d_un.d_val);
+	    // STACK: dt_value dt_name needed_table "needed" elf_table
+	    lua_rawset(L, -5);
+	    continue;
 	case DT_RPATH:
 	    lua_pushstring(L, "rpath");
 	    break;
 	case DT_RUNPATH:
 	    lua_pushstring(L, "runpath");
 	    break;
-	case DT_NEEDED:
-	    lua_pushstring(L, strtab + gdyn.d_un.d_val);
-	    // STACK: dt_value needed_table "needed" elf_table
-	    lua_rawseti(L, -2, libnum++);
-	    continue;
 	default:
 	    continue;
 	}
-	lua_pushstring(L, strtab + gdyn.d_un.d_val);
-	// STACK: dt_value dt_name needed_table "needed" elf_table
+	lua_newtable(L);
+	char *pathptr = strtab + gdyn.d_un.d_val;
+	char *next;
+	int i;  // Shadows loopvar.
+	for (i = 1;
+	     next = strchr(pathptr, ':');
+	     i++, pathptr = next+1) {
+	    lua_pushlstring(L, pathptr, next - pathptr);
+	    lua_rawseti(L, -2, i);
+	} 
+	lua_pushstring(L, pathptr);
+	lua_rawseti(L, -2, i);
+
 	lua_rawset(L, -5);
     }
     lua_rawset(L, -3);
@@ -208,13 +225,144 @@ bugout:
     return 2;
 }
 
+#define DT_REG 8
+#define DT_LNK 10
+
+static void inode_in_table(lua_State *L, int dev, int inode)
+{
+    char buf[128];
+    sprintf(buf, "%d,%d", dev, inode);
+    lua_newtable(L);
+    lua_pushstring(L, buf);
+    lua_rawseti(L, -2, 1);
+    return;
+}
+
+// candidate_table, prefix
+LUAFN(get_candidates)
+{
+    char *curdir = NULL;
+
+    if (lua_isnoneornil(L, 1) ||
+	!(curdir = getcwd(NULL, 0)) ||
+	chdir(lua_toboolean(L, 2) ? luaL_checkstring(L, 2) : "/") == -1) {
+	free(curdir);
+	lua_newtable(L);
+	return 1;
+    }
+
+    // Single value becomes a one-entry table.
+    if (lua_istable(L, 1))
+	lua_pushvalue(L,1);
+    else {
+	lua_newtable(L);
+	lua_pushvalue(L,1);
+	lua_rawseti(L,-2,1);
+    }
+
+    // Stat results go here.
+    lua_newtable(L);
+	
+    lua_pushnil(L);
+    int place = 1;
+    while (lua_next(L, -3)) {
+	struct stat statb;
+	const char *name = lua_tostring(L, -1);
+
+	if (*name != '/' || stat(&name[1], &statb) == -1)
+	    goto done;
+
+	if (S_ISREG(statb.st_mode)) {
+	    inode_in_table(L, statb.st_dev, statb.st_ino);
+	    lua_pushstring(L, name);
+	    lua_rawseti(L, -2, 2);
+	    lua_rawseti(L, -4, place++);
+	    goto done;
+	}
+	
+	if (S_ISDIR(statb.st_mode)) {
+	    DIR *dirp;
+	    char *olddir = getcwd(NULL, 0);
+	    if (chdir(&name[1]) == 0 && (dirp = opendir("."))) {
+		struct dirent *dent;
+		while (dent = readdir(dirp)) {
+		    // Exclude some obviously wrong files.
+		    if (dent->d_type != DT_REG && dent->d_type != DT_LNK)
+			continue;
+		    char *ext=strrchr(dent->d_name, '.');
+		    if (ext && (!strcmp(ext, ".a") || !strcmp(ext, ".la")))
+			continue;
+		    if (stat(dent->d_name, &statb) == -1 ||
+			!S_ISREG(statb.st_mode))
+			continue;
+		    inode_in_table(L, statb.st_dev, statb.st_ino);
+		    lua_pushfstring(L, "%s/%s", name, dent->d_name);
+		    lua_rawseti(L, -2, 2);
+		    lua_rawseti(L, -4, place++);
+		}
+		closedir(dirp);
+	    }
+	    if (olddir)
+		chdir(olddir);
+	    free(olddir);
+	}
+
+    done:
+	lua_pop(L, 1);
+    }
+    
+    chdir(curdir);
+    free(curdir);
+    return 1;
+	
+}
+
+// Look through a table of synonyms for a given file and yield the directories
+// for which the synonym with an absolute path is a hardlink.
+LUAFN(get_origins)
+{
+    char *curdir = NULL;
+    if (!(curdir = getcwd(NULL, 0)) ||
+	chdir(lua_toboolean(L, 2) ? luaL_checkstring(L, 2) : "/") == -1) {
+	free(curdir);
+	lua_newtable(L);
+	return 1;
+    }
+    lua_newtable(L);
+    lua_pushnil(L);
+    while (lua_next(L, 1)) {
+	struct stat statb;
+	const char *filename = lua_tostring(L, -2);
+	lua_pop(L, 1);
+		
+	if (*filename != '/' || lstat(&filename[1], &statb) != 0 ||
+	    !S_ISREG(statb.st_mode)) {
+	    continue;
+	}
+
+	char *dirend = strrchr(filename, '/');
+	if (dirend) {
+	    int len = dirend - filename;
+	    lua_pushlstring(L, filename, len > 0 ? len : 1);
+	} else
+	    lua_pushstring(L, filename);
+	lua_pushboolean(L, 1);
+	lua_rawset(L, -4);
+    }
+    chdir(curdir);
+    free(curdir);
+    return 1;
+}
+
 typedef struct { const char *name; int value; } intconst;
 
-LUALIB_API int luaopen_scanelf(lua_State *L)
+LUALIB_API int luaopen_elfutil(lua_State *L)
 {
     static const luaL_Reg funcptrs[] = {
 	FN_ENTRY(filter_on_machine),
 	FN_ENTRY(scan_elf),
+	FN_ENTRY(get_candidates),
+	FN_ENTRY(get_origins),
 	{NULL, NULL}
     };
 
@@ -224,7 +372,7 @@ LUALIB_API int luaopen_scanelf(lua_State *L)
 	{NULL, 0}
     };
 
-    luaL_register(L, "scanelf", funcptrs);
+    luaL_register(L, "elfutil", funcptrs);
     for (int i = 0; machines[i].name; i++) {
         lua_pushstring(L, machines[i].name);
         lua_pushinteger(L, machines[i].value);

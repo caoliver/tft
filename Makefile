@@ -4,12 +4,12 @@ LDFLAGS+=-lluajit-5.1
 
 .PHONY: all clean
 
-all: ljcurses.so scanelf.so
+all: ljcurses.so elfutil.so lmarshal.so
 
 ljcurses.so: ljcurses.o
 	gcc -shared $(LDFLAGS) -lncurses -o $@ $<
 
-scanelf.so: scanelf.o
+elfutil.so: elfutil.o
 	gcc -shared $(LDFLAGS) -lelf -o $@ $<
 
 %.so: %.o
