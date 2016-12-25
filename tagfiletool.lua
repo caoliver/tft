@@ -50,8 +50,29 @@ do
    end
 end
 
+local function cleanuppath(path)
+   if not path then error('Invalid path: '..tostring(path)) end
+   -- Elide superfluous '/'.
+   path = path:gsub('/+', '/')
+   -- Remove backtracks.
+   local newpath
+   while true do
+      local newpath = path:gsub('^/%.%./', '/')
+      if newpath == path then break end
+      path = newpath
+   end
+   while true do
+      local newpath = path:gsub('/[^/]+/%.%./', '/')
+      if newpath == path then break end
+      path = newpath
+   end
+   -- Remove trailing slash if present.
+   return path[#path] == '/'  and path:sub(1,-2) or path
+end
 
-function read_installation()
+function read_installation(prefix)
+   local directory = cleanuppath((prefix or '')..'/var/log/packages')
+
    local function check_other(arg)
       if not arg.categories then
 	 print 'Argument must be a tagset'
@@ -136,7 +157,7 @@ function read_installation()
 		       show=show_like, like = like, tags={},
 		       describe = describe, compare=compare,
 		       missing=missing }
-   local find = io.popen 'find /var/log/packages -type f'
+   local find = io.popen('find '..directory..' -type f')
    for package in find:lines() do
       local tag,version,arch,build =
 	 package:match '/([^/]+)%-([^-]+)%-([^-]+)%-([^-]+)$'
@@ -155,10 +176,13 @@ function read_installation()
 end
 
 local tagset_list = {}
+local tagset_next_instance = {}
 setmetatable(tagset_list, {__mode = 'k'})
 
 function read_tagset(tagset_directory, skip_kde)
    local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
+
+   tagset_directory = cleanuppath(tagset_directory)
 
    local function forget_changes(tagset, uncache)
       tagset.dirty = false
@@ -406,10 +430,16 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
+   local function get_instance(directory)
+      local new_instance = 1 + (tagset_next_instance[directory] or 0)
+      tagset_next_instance[directory] = new_instance
+      return new_instance
+   end
+
    local function clone(tagset)
       local newset = {
-      tags = {}, categories = {},
-      directory = tagset_directory, write = write_tagset, show=show_like,
+      tags = {}, categories = {}, directory = tagset_directory,
+      write = write_tagset, show=show_like, change_archive=change_archive,
       forget=forget_changes, set=set_state, like=like, describe=describe,
       compare=compare, missing=missing, clone=clone }
       for category,tags in ipairs(tagset.categories) do
@@ -425,18 +455,20 @@ function read_tagset(tagset_directory, skip_kde)
       end
       tagset_list[newset] = true
       tagset_list_changed = true
+      newset.instance = get_instance(tagset.directory)
       return newset
    end
 
    local function change_archive(tagset, directory)
-      local txtfiles_pipe =
-	 io.popen('find '..directory..' -name \\*.txt')
+      directory = cleanuppath(directory)
       for _,tuple in pairs(tagset.tags) do
 	 tuple.version = nil
 	 tuple.arch = nil
 	 tuple.build = nil
 	 tuple.description = nil
       end
+      local txtfiles_pipe =
+	 io.popen('find '..directory..' -name \\*.txt')
       for descr_file in txtfiles_pipe:lines() do
 	 local tag,version,arch,build =
 	    descr_file:match '/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+).txt$'
@@ -454,8 +486,7 @@ function read_tagset(tagset_directory, skip_kde)
 
    local tagset = {
       type = 'tagset',
-      tags = {}, categories = {},
-      directory = tagset_directory, archive_directory,
+      tags = {}, categories = {}, directory = tagset_directory,
       write = write_tagset, show=show_like, change_archive=change_archive,
       forget=forget_changes, set=set_state, like=like, describe=describe,
       compare=compare, missing=missing, clone=clone }
@@ -491,14 +522,15 @@ function read_tagset(tagset_directory, skip_kde)
    category_pipe:close()
    tagset_list_changed= true
    tagset_list[tagset] = true
+   tagset.instance = get_instance(tagset_directory)
    return tagset
 end
 
 
 do
    local tagset_list_last_size=0
-   function tagsets(i)
-      local format = indent..'%d: %s%s'
+   function tagsets(ix)
+      local format = indent..'%d: %3s %s%s'
       local sets = {}
       for tagset,_ in pairs(tagset_list) do table.insert(sets, tagset) end
       table.sort(sets, function(a, b) return a.directory < b.directory end)
@@ -506,7 +538,6 @@ do
 	 tagset_list_last_size = #sets
 	 tagset_list_changed = true
       end
-      if i and not tagset_list_changed then return sets[i] end
       if tagset_list_changed then
 	 io.write 'The set of loaded tagsets may have changed.  '
 	 if #sets > 0 then print 'Here\'s new the list.' end
@@ -514,7 +545,9 @@ do
       end
       if #sets == 0 then print 'The list is empty.' end
       for i,set in ipairs(sets) do
-	 print(format:format(i, (set.dirty and '* ' or '  '), set.directory))
+	 print(format:format(i, '<'..set.instance..'>',
+			     (set.dirty and '* ' or '  '), set.directory))
       end
+      if ix then return sets[ix] end
    end
 end
