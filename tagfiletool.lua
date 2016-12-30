@@ -111,25 +111,25 @@ function read_installation(prefix)
       end
    end
 
-   local function compare(installation, tagset, ...)
-      if check_other(tagset) then tagset:compare(installation, ...) end
+   local function compare(self, tagset, ...)
+      if check_other(tagset) then tagset:compare(self, ...) end
    end
 
-   local function missing(installation, tagset)
-      if check_other(tagset) then tagset:missing(installation) end
+   local function missing(self, tagset)
+      if check_other(tagset) then tagset:missing(self) end
    end
 
-   local function like(installation, pattern)
+   local function like(self, pattern)
       local set = {}
-      for tag, _ in pairs(installation.tags) do
+      for tag, _ in pairs(self.tags) do
 	 if tag:match(pattern) then table.insert(set, tag) end
       end
       return { set=set, show=show_matches, describe=describe }
    end
 
-   local function show_like(installation, pattern)
+   local function show_like(self, pattern)
       local matches = {}
-      for tag, tuple in pairs(installation.tags) do
+      for tag, tuple in pairs(self.tags) do
 	 if not pattern or tag:match(pattern) then
 	    table.insert(matches, tuple)
 	 end
@@ -153,7 +153,7 @@ function read_installation(prefix)
       end
    end
 
-   local installed = { type = 'installation',
+    local installed = { type = 'installation',
 		       show=show_like, like = like, tags={},
 		       describe = describe, compare=compare,
 		       missing=missing }
@@ -184,28 +184,28 @@ function read_tagset(tagset_directory, skip_kde)
 
    tagset_directory = cleanuppath(tagset_directory)
 
-   local function forget_changes(tagset, uncache)
-      tagset.dirty = false
-      for tag,tuple in pairs(tagset.tags) do
+   local function forget_changes(self, uncache)
+      self.dirty = false
+      for tag,tuple in pairs(self.tags) do
 	 if tuple.state ~= tuple.old_state then
 	    tuple.state = tuple.old_state
 	 end
       end
       if uncache then
-	 tagset_list[tagset] = nil
+	 tagset_list[self] = nil
 	 tagset_list_changed = true
       end
    end
 
-   local function like(tagset, pattern)
+   local function like(self, pattern)
       local set = {}
-      for tag, _ in pairs(tagset.tags) do
+      for tag, _ in pairs(self.tags) do
 	 if tag:match(pattern) then table.insert(set, tag) end
       end
       return { set=set, show=show_matches }
    end
 
-   local function set_state(tagset, taglist, state)
+   local function set_state(self, taglist, state)
       if not state then
 	 state = 'ADD'
       else
@@ -215,23 +215,23 @@ function read_tagset(tagset_directory, skip_kde)
 	    return
 	 end
       end
-      if type(taglist) ~= 'table' then taglist = like(tagset, taglist).set end
+      if type(taglist) ~= 'table' then taglist = like(self, taglist).set end
       for _, tag in ipairs(taglist) do
-	 local tuple = tagset.tags[tag]
+	 local tuple = self.tags[tag]
 	 if not tuple then
 	    print('Can\'t find tag '..tag..' in set.  Skipping!')
 	 else
 	    if tuple.state ~= state  then
 	       tuple.state = state;
-	       tagset.dirty = true
+	       self.dirty = true
 	    end
 	 end
       end
    end
 
-   local function show_like(tagset, pattern, category, state)
+   local function show_like(self, pattern, category, state)
       local matches = {}
-      for tag, tuple in pairs(tagset.tags) do
+      for tag, tuple in pairs(self.tags) do
 	 if (not pattern or tag:match(pattern)) and
 	    (not category or category == tuple.category) and
 	    (not state or state == tuple.state)
@@ -279,9 +279,9 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
-   local function write_tagset(tagset, directory, NonADD_to_SKP)
+   local function write_tagset(self, directory, NonADD_to_SKP)
       if not directory then print 'No directory given'; return; end
-      for category, tags in pairs(tagset.categories) do
+      for category, tags in pairs(self.categories) do
 	 local tagdir = directory..'/'..category
 	 os.execute('rm -rf '..tagdir)
 	 if os.execute('mkdir -p '..directory..'/'..category) ~= 0 then
@@ -302,19 +302,19 @@ function read_tagset(tagset_directory, skip_kde)
 	    end
 	 end
 	 tagfile:close()
-	 for _,tuple in pairs(tagset.tags) do tuple.old_state = tuple.state end
-	 tagset.dirty = false
-	 tagset.directory = directory
+	 for _,tuple in pairs(self.tags) do tuple.old_state = tuple.state end
+	 self.dirty = false
+	 self.directory = directory
       end
    end
 
-   local function missing(tagset, installation)
+   local function missing(self, installation)
       if installation.categories then
 	 print 'Argument must be an installation'
 	 return
       end
       local missing_required={}
-      for tag,tuple in pairs(tagset.tags) do
+      for tag,tuple in pairs(self.tags) do
 	 if not installation.tags[tag] and tuple.state == 'ADD' then
 	    table.insert(missing_required, tag)
 	 end
@@ -327,10 +327,28 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
-   local function compare(tagset, thingie, show_version_changes,
-			  show_optional, inhibit_recommended)
+   local function compare(self, thingie, options)
+      options = options or {}
+      local show_version_changes = options.show_changes
+      local show_optional = options.show_opts
+      local inhibit_recommended = options.no_recs
+      local category = options.category
+      local pattern = options.pattern
+
       local function intersection_difference(a, b)
 	 local function check_states(a,b)
+	    if pattern then
+	       if a and not a.tag:match(pattern) then return false end
+	       if b and not b.tag:match(pattern) then return false end
+	    end
+	    if category then
+	       if a and a.category and a.category ~= category then
+		  return false
+	       end
+	       if b and b.category and b.category ~= category then
+		  return false
+	       end
+	    end
 	    if skip_kde and (a and a.category and a.category:match '^kde' or
 			     b and b.category and b.category:match '^kde') then
 	       return false
@@ -354,9 +372,7 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
 	 for tag, tuple in pairs(b.tags) do
 	    if check_states(a.tags[tag], tuple) then
-	       if not a.tags[tag] then
-		  table.insert(only_b, tag)
-	       end
+	       if not a.tags[tag] then table.insert(only_b, tag) end
 	    end
 	 end
 	 return common, only_a, only_b
@@ -365,12 +381,12 @@ function read_tagset(tagset_directory, skip_kde)
       other_thing =
 	 thingie.type == 'tagset' and 'second tagset' or 'installation'
       print('Comparing tagset to '..other_thing)
-      local common, not_in_tagset, not_in_other =
-	 intersection_difference(thingie, tagset)
+      local common, not_in_other, not_in_self =
+	 intersection_difference(self, thingie)
       local different_version = {}
       if show_version_changes then
 	 for _,tag in ipairs(common) do
-	    local tuple=tagset.tags[tag]
+	    local tuple=self.tags[tag]
 	    local other_tuple=thingie.tags[tag]
 	    if (tuple.version and other_tuple.version and
 		   (tuple.version ~= other_tuple.version or
@@ -391,9 +407,9 @@ function read_tagset(tagset_directory, skip_kde)
       else
 	 print('Nothing missing from '..other_thing..'!')
       end
-      if #not_in_tagset > 0 then
+      if #not_in_self > 0 then
 	 print('Missing from tagset:')
-	 show_matches {set=not_in_tagset}
+	 show_matches {set=not_in_self}
       else
 	 print 'Nothing missing from tagset!'
       end
@@ -436,13 +452,13 @@ function read_tagset(tagset_directory, skip_kde)
       return new_instance
    end
 
-   local function clone(tagset)
+   local function clone(self)
       local newset = {
       tags = {}, categories = {}, directory = tagset_directory,
       write = write_tagset, show=show_like, change_archive=change_archive,
       forget=forget_changes, set=set_state, like=like, describe=describe,
       compare=compare, missing=missing, clone=clone }
-      for category,tags in ipairs(tagset.categories) do
+      for category,tags in ipairs(self.categories) do
 	 local taglist = {}
 	 newset.categories[category] = taglist
 	 for _, tuple in ipairs(tags) do
@@ -455,13 +471,13 @@ function read_tagset(tagset_directory, skip_kde)
       end
       tagset_list[newset] = true
       tagset_list_changed = true
-      newset.instance = get_instance(tagset.directory)
+      newset.instance = get_instance(self.directory)
       return newset
    end
 
-   local function change_archive(tagset, directory)
+   local function change_archive(self, directory)
       directory = cleanuppath(directory)
-      for _,tuple in pairs(tagset.tags) do
+      for _,tuple in pairs(self.tags) do
 	 tuple.version = nil
 	 tuple.arch = nil
 	 tuple.build = nil
@@ -472,13 +488,13 @@ function read_tagset(tagset_directory, skip_kde)
       for descr_file in txtfiles_pipe:lines() do
 	 local tag,version,arch,build =
 	    descr_file:match '/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+).txt$'
-	 if not tagset.tags[tag] then
+	 if not self.tags[tag] then
 	    print('No tagfile record for '..tag..'.  Skipping!')
 	 else
-	    tagset.tags[tag].version = version
-	    tagset.tags[tag].arch = arch
-	    tagset.tags[tag].build = build
-	    tagset.tags[tag].description = make_description(descr_file)
+	    self.tags[tag].version = version
+	    self.tags[tag].arch = arch
+	    self.tags[tag].build = build
+	    self.tags[tag].description = make_description(descr_file)
 	 end
       end
       txtfiles_pipe:close()
