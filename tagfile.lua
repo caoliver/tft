@@ -74,7 +74,7 @@ function read_installation(prefix)
    local directory = cleanuppath((prefix or '')..'/var/log/packages')
 
    local function check_other(arg)
-      if not arg.categories then
+      if not arg.type ~= 'tagset' then
 	 print 'Argument must be a tagset'
 	 return false
       end
@@ -309,7 +309,7 @@ function read_tagset(tagset_directory, skip_kde)
    end
 
    local function missing(self, installation)
-      if installation.categories then
+      if installation.type ~= 'installation' then
 	 print 'Argument must be an installation'
 	 return
       end
@@ -482,6 +482,7 @@ function read_tagset(tagset_directory, skip_kde)
 	 tuple.arch = nil
 	 tuple.build = nil
 	 tuple.description = nil
+	 tuple.shortdescr = nil
       end
       local txtfiles_pipe =
 	 io.popen('find '..directory..' -name \\*.txt')
@@ -498,6 +499,31 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
       end
       txtfiles_pipe:close()
+
+      local maketags = io.popen('ls '..directory..'/*/maketag 2>/dev/null')
+      for line in maketags:lines() do
+	 local maketag = io.open(line)
+	 if maketag then
+	    local gotdata
+	    for line in maketag:lines() do
+	       local quoted = line:sub(1,1) == '"'
+	       if gotdata and not quoted then break end
+	       if quoted then
+		  gotdata = true
+		  local tag, descr =
+		     line:match '"([^"]*)" "([^"]*)" "[^"]*" \\'
+		  if not tag then
+		     print('Skipping strange line: '..line)
+		  else
+		     local entry = self.tags[tag]
+		     print(tag,entry)
+		     if entry then entry.shortdescr = descr end
+		  end
+	       end
+	    end
+	    maketag:close()
+	 end
+      end
    end
 
    local tagset = {

@@ -2,9 +2,6 @@ local bad_offers = {
    ['m17n-lib'] = {'libm.so.'},
 }
 
-local elfutil=require 'elfutil'
-local util=require 'util'
-
 -- This is redundant.
 local function cleanuppath(path)
    if not path then error('Invalid path: '..tostring(path)) end
