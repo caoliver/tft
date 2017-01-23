@@ -1,6 +1,8 @@
 #include "lua_head.h"
 #include <ncurses.h>
 #include <ctype.h>
+#include <termios.h>
+#include <unistd.h>
 
 WINDOW *curwin;
 
@@ -65,6 +67,12 @@ LUAFN(getch)
 done:
     lua_pushinteger(L, k);
     return 1;
+}
+
+LUAFN(timeout)
+{
+    timeout(luaL_checkinteger(L, 1));
+    return 0;
 }
 
 
@@ -349,6 +357,7 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
 	FN_ENTRY(init_curses),
 	FN_ENTRY(endwin),
 	FN_ENTRY(getch),
+	FN_ENTRY(timeout),
 	
 	FN_ENTRY(doupdate),
 	FN_ENTRY(refresh),
