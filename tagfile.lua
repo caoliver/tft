@@ -464,9 +464,9 @@ function read_tagset(tagset_directory, skip_kde)
 	 for _, tuple in ipairs(tags) do
 	    local newtuple = {}
 	    for k,v in pairs(tuple) do newtuple[k] = v end
-	    new_tuple.old_state = new_tuple.state
-	    table.insert(taglist, tuple)
-	    newset.tags[tuple.tag] = tuple
+	    newtuple.old_state = newtuple.state
+	    table.insert(taglist, newtuple)
+	    newset.tags[newtuple.tag] = newtuple
 	 end
       end
       tagset_list[newset] = true
