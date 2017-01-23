@@ -516,7 +516,6 @@ function read_tagset(tagset_directory, skip_kde)
 		     print('Skipping strange line: '..line)
 		  else
 		     local entry = self.tags[tag]
-		     print(tag,entry)
 		     if entry then entry.shortdescr = descr end
 		  end
 	       end
