@@ -8,6 +8,7 @@ function first_field(a, b) return case_insensitive_less_than(a[1], b[1]) end
 
 local indent='  '
 local line_start = #indent
+local spaces = string.rep(' ',128)
 
 local show_matches, show_tuples, describe
 do
@@ -179,10 +180,14 @@ local tagset_list = {}
 local tagset_next_instance = {}
 setmetatable(tagset_list, {__mode = 'k'})
 
+local edit_tagset
+
 function read_tagset(tagset_directory, skip_kde)
    local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
 
    tagset_directory = cleanuppath(tagset_directory)
+
+   local function edit(tagset) edit_tagset(tagset) end
 
    local function forget_changes(self, uncache)
       self.dirty = false
@@ -454,10 +459,11 @@ function read_tagset(tagset_directory, skip_kde)
 
    local function clone(self)
       local newset = {
-      tags = {}, categories = {}, directory = tagset_directory,
-      write = write_tagset, show=show_like, change_archive=change_archive,
-      forget=forget_changes, set=set_state, like=like, describe=describe,
-      compare=compare, missing=missing, clone=clone }
+	 tags = {}, categories = {}, directory = self.directory,
+	 category_description = self.category_description,
+	 write = write_tagset, show=show_like, change_archive=change_archive,
+	 forget=forget_changes, set=set_state, like=like, describe=describe,
+	 compare=compare, missing=missing, clone=clone, edit=edit }
       for category,tags in ipairs(self.categories) do
 	 local taglist = {}
 	 newset.categories[category] = taglist
@@ -484,6 +490,7 @@ function read_tagset(tagset_directory, skip_kde)
 	 tuple.description = nil
 	 tuple.shortdescr = nil
       end
+      self.category_description = {}
       local txtfiles_pipe =
 	 io.popen('find '..directory..' -name \\*.txt')
       for descr_file in txtfiles_pipe:lines() do
@@ -523,6 +530,21 @@ function read_tagset(tagset_directory, skip_kde)
 	    maketag:close()
 	 end
       end
+
+      local setpkg = io.open(directory..'/../isolinux/setpkg')
+      if setpkg then
+	 for line in setpkg:lines() do
+	    local category, short, long =
+	       line:match '^"([A-Z]+)" "([^"]*)" on "([^"]*)"'
+	    if category then
+	       local category = category:lower()
+	       self.category_description[category] = {
+		  short = short, long = long
+	       }
+	    end
+	 end
+	 setpkg:close()
+      end
    end
 
    local tagset = {
@@ -530,7 +552,7 @@ function read_tagset(tagset_directory, skip_kde)
       tags = {}, categories = {}, directory = tagset_directory,
       write = write_tagset, show=show_like, change_archive=change_archive,
       forget=forget_changes, set=set_state, like=like, describe=describe,
-      compare=compare, missing=missing, clone=clone }
+      compare=compare, missing=missing, clone=clone, edit=edit }
    local category_pipe = io.popen('find '..tagset_directory..
 				     ' -mindepth 1 -maxdepth 1 -type d')
    for category_directory in category_pipe:lines() do
@@ -592,3 +614,130 @@ do
       if ix then return sets[ix] end
    end
 end
+
+function edit_tagset(tagset)
+   local l = require 'ljcurses'
+   local a = l.attributes
+   local b = l.boxes
+   local k = l.keys
+   local series_window
+   local swin_size = 32
+
+   local function draw_series_window()
+      if not series_window then
+	 series_window = l.newwin(3,swin_size,0,0)
+	 l.bkgd(series_window, l.color_pair(1))
+	 l.attron(series_window, a.bold)
+	 l.box(series_window, b.vline, b.hline)
+	 l.move(series_window,1,1)
+	 l.addstr(series_window, 'Series:')
+      end
+      l.move(series_window, 1, 9)
+      l.addnstr(series_window, 'hello'..spaces, swin_size-10)
+      l.noutrefresh(series_window)
+      l.doupdate()
+   end
+
+
+   local function do_editor()
+      local _,_,rows,cols = l.getdims()
+      -- Initial screen paint here.
+      -- If a timeout isn't given at first, then SIGINT isn't
+      -- handled correctly.
+      l.timeout(100000)
+      while true do
+	 ::continue::
+	 local ch
+	 repeat ch = l.getch() until ch >= 0
+	 if ch == k.resize then
+	    -- 1/5 sec
+	    l.timeout(200)
+	    repeat ch = l.getch() until ch ~= k.resize
+	    l.timeout(0)
+	    local _,_,rows,cols = l.getdims()
+	    -- Screen repaint here.
+	    if ch == -1 then goto continue end
+	 end
+	 if ch == k['ctrl/space'] then break end
+	 if ch == k['ctrl/l'] then
+	    -- Screen repaint here.
+	    goto continue
+	 end
+	 l.addstr '*'
+      end
+   end
+   
+   l.init_curses()
+   l.start_color()
+   l.init_pair(1, a.white, a.blue)
+   l.bkgd(l.color_pair(1))
+   l.refresh()
+   draw_series_window()
+   l.move(10,10)
+   pcall(do_editor)
+   l.endwin()
+   print 'Editor finished'
+end
+
+
+--[[ This is for testing
+l=require 'ljcurses'
+
+do
+   local errmsg
+   function with_curses(fn, ...)
+      if not errmsg then
+	 l.init_curses()
+	 if l.start_color() then
+	    l.refresh()
+	    fn(...)
+	 else
+	    errmsg='\nYou need a color terminal to do this!'
+	 end
+	 l.endwin()
+      end
+      print(errmsg or '')
+   end
+end
+
+
+function show_descr(tagset, tag)
+   with_curses(function (ARGS)
+	 l.init_pair(1, a.green, a.black)
+	 local bx = l.newwin(22,74,2,2)
+	 local data = l.newwin(20,72,3,3)
+	 l.bkgd(bx, l.color_pair(1))
+	 l.attron(bx,a.bold)
+	 l.bkgd(data, l.color_pair(0))
+	 l.attron(data,a.bold)
+	 l.box(bx,b.vline,b.hline)
+	 l.move(data, 0, 0)
+	 local tuple = tagset.tags[tag]
+	 if not tuple.description then
+	    l.addstr(data, 'No description for: '..tag)
+	 else
+	    l.addnstr(data, string.format('%s/%s  %s  %s  %s  (%s)',
+					  tuple.category,
+					  tuple.tag, tuple.version,
+					  tuple.arch, tuple.build,
+					  tuple.state), 72)
+	    l.move(data, 1, 0)
+	    l.addnstr(data, tuple.shortdescr or 'NO SHORT DESCRIPTION', 72)
+	    l.move(data, 2, 0)
+	    l.hline(data, 0, 71)
+	    local row = 3
+	    for _,line in pairs(tuple.description()) do
+	       l.move(data, row, 0)
+	       row = row + 1;
+	       if row > 19 then break end
+	       l.addnstr(data, line:match '^ ?(.*)$', 72)
+	    end
+	 end
+	 l.noutrefresh(bx)
+	 l.noutrefresh(data)
+	 l.doupdate()
+	 l.getch()
+   end)
+
+end
+--]]
