@@ -28,7 +28,21 @@ LUAFN(init_curses)
     noecho();
     raw();
     keypad(stdscr,TRUE);
-    lua_pushlightuserdata(L, stdscr);
+    lua_getglobal(L, "ljcurses");
+    lua_getfield(L, -1, "boxes");
+    // These aren't constants at compile time.  :-(
+    AT_NAME_PUT_INT(vline,    ACS_VLINE);
+    AT_NAME_PUT_INT(hline,    ACS_HLINE);
+    AT_NAME_PUT_INT(urcorner, ACS_URCORNER);
+    AT_NAME_PUT_INT(ulcorner, ACS_ULCORNER);
+    AT_NAME_PUT_INT(lrcorner, ACS_LRCORNER);
+    AT_NAME_PUT_INT(llcorner, ACS_LLCORNER);
+    AT_NAME_PUT_INT(ltee,     ACS_LTEE);
+    AT_NAME_PUT_INT(rtee,     ACS_RTEE);
+    AT_NAME_PUT_INT(ttee,     ACS_TTEE);
+    AT_NAME_PUT_INT(btee,     ACS_BTEE);
+    AT_NAME_PUT_INT(plus,     ACS_PLUS);
+    AT_NAME_PUT_INT(diamond,  ACS_DIAMOND);
     return 0;
 }
 
@@ -247,6 +261,15 @@ LUAFN(move)
 }
 
 
+LUAFN(addch)
+{
+    WINDOW *w;
+    int i = which_window(L, &w);
+
+    waddch(w, luaL_checkinteger(L, i + 1));
+    return 0;
+}
+
 LUAFN(addstr)
 {
     WINDOW *w;
@@ -380,6 +403,7 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
 	
 	FN_ENTRY(move),
 	
+	FN_ENTRY(addch),
 	FN_ENTRY(addstr),
 	FN_ENTRY(addnstr),
 	FN_ENTRY(insstr),
@@ -454,13 +478,6 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
 
     lua_pushstring(L, "boxes");
     lua_newtable(L);
-    // These aren't constants at compile time.  :-(
-    AT_NAME_PUT_INT(vline,    ACS_VLINE);
-    AT_NAME_PUT_INT(hline,    ACS_HLINE);
-    AT_NAME_PUT_INT(urcorner, ACS_URCORNER);
-    AT_NAME_PUT_INT(ulcorner, ACS_ULCORNER);
-    AT_NAME_PUT_INT(lrcorner, ACS_LRCORNER);
-    AT_NAME_PUT_INT(llcorner, ACS_LLCORNER);
     lua_rawset(L, -3);
 
     lua_pushstring(L, "keys");
