@@ -4,7 +4,12 @@
 #include <termios.h>
 #include <unistd.h>
 
-WINDOW *curwin;
+// Milliseconds
+#define ESC_DELAY 50 
+
+static WINDOW *curwin;
+
+static int curtimeout;
 
 static int which_window(lua_State *L, WINDOW **w)
 {
@@ -24,6 +29,7 @@ static int which_window(lua_State *L, WINDOW **w)
 LUAFN(init_curses)
 {
     initscr();
+    set_escdelay(ESC_DELAY);
     curwin = stdscr;
     noecho();
     raw();
@@ -61,11 +67,16 @@ LUAFN(getch)
     // Skip escape sequences.
     for (;;) {
 	k=getch();
+	if (k < 0 && state == ESC1) {
+	    k = 27;
+	    goto done;
+	}
 	switch(state) {
 	case DONE:
 	    if (k != 27)
 		goto done;
 	    state = ESC1;
+	    timeout(ESC_DELAY);
 	    break;
 	case ESC1:
 	    if (k != 'O' && k != '[')
@@ -79,13 +90,15 @@ LUAFN(getch)
     }
 
 done:
+    timeout(curtimeout);
     lua_pushinteger(L, k);
     return 1;
 }
 
 LUAFN(timeout)
 {
-    timeout(luaL_checkinteger(L, 1));
+    curtimeout = luaL_checkinteger(L, 1);
+    timeout(curtimeout);
     return 0;
 }
 
