@@ -548,8 +548,8 @@ function read_tagset(tagset_directory, skip_kde)
    end
 
    local tagset = {
-      type = 'tagset',
-      tags = {}, categories = {}, directory = tagset_directory,
+      type = 'tagset', tags = {}, categories = {},
+      directory = tagset_directory, category_description = {},
       write = write_tagset, show=show_like, change_archive=change_archive,
       forget=forget_changes, set=set_state, like=like, describe=describe,
       compare=compare, missing=missing, clone=clone, edit=edit }
@@ -616,66 +616,139 @@ do
 end
 
 function edit_tagset(tagset)
+   local rows, cols, package_lines
    local l = require 'ljcurses'
    local a = l.attributes
    local b = l.boxes
    local k = l.keys
-   local series_window
-   local swin_size = 32
+   local series_sorted = {}
+   local _
+   for k in pairs(tagset.categories) do table.insert(series_sorted, k) end
+   table.sort(series_sorted)
+   local current_series = tagset.current_series or 1
+   local category = tagset.categories[series_sorted[current_series]]
+   local packages_window
+   local series_tops = tagset.series_tops or {}
+   local current_top = series_tops[current_series] or 1
 
-   local function draw_series_window()
-      if not series_window then
-	 series_window = l.newwin(3,swin_size,0,0)
-	 l.bkgd(series_window, l.color_pair(1))
-	 l.attron(series_window, a.bold)
-	 l.box(series_window, b.vline, b.hline)
-	 l.move(series_window,1,1)
-	 l.addstr(series_window, 'Series:')
-      end
-      l.move(series_window, 1, 9)
-      l.addnstr(series_window, 'hello'..spaces, swin_size-10)
-      l.noutrefresh(series_window)
-      l.doupdate()
+
+   local function show_series()
+      l.move(1, 9)
+      local name = series_sorted[current_series]
+      local descrs = tagset.category_description[name]
+      l.addnstr(name.. (descrs and (' - '..descrs.short) or '')..spaces,
+		cols - 10)
+      l.noutrefresh()
    end
 
+   local function repaint_package_list()
+      if not packages_window then
+	 packages_window = l.newwin(package_lines,cols-2,3,1)
+	 l.bkgd(packages_window, l.color_pair(1))
+      end
+      local current_line = current_top
+      for lineno = 1, package_lines do
+	 if current_line > #category then break end
+	 local tuple = category[current_line]
+	 l.move(packages_window, lineno - 1, 0)
+	 l.addstr(packages_window, tuple.tag)
+	 current_line = current_line + 1
+      end
+      l.noutrefresh(packages_window)
+   end
+
+   local function repaint()
+      local oldrows, oldcols = rows, cols
+      _,_,rows,cols = l.getdims()
+      -- Adjust packages pane as necessary
+      package_lines = rows - 6
+      l.move(0,0)
+      l.clrtobot()
+      l.box(b.vline,b.hline)
+      l.move(2,0)
+      l.addch(b.ltee)
+      l.hline(b.hline, cols-2)
+      l.move(2,cols-1)
+      l.addch(b.rtee)
+      l.move(1,1)
+      l.addstr('Series:')
+      show_series()
+      l.move(rows-3,0)
+      l.addch(b.ltee)
+      l.hline(b.hline, cols-2)
+      l.move(rows-3,cols-1)
+      l.addch(b.rtee)
+      if packages_window then
+	 l.delwin(packages_window)
+	 packages_window = nil
+      end
+      repaint_package_list()
+   end
+
+   local function select_series(new_series)
+      if new_series ~= current_series then
+	 series_tops[current_series] = current_top
+	 current_top = series_tops[new_series] or 1
+	 category = tagset.categories[series_sorted[new_series]]
+	 current_series = new_series
+	 repaint()
+      end
+   end
 
    local function do_editor()
-      local _,_,rows,cols = l.getdims()
-      -- Initial screen paint here.
+
+      repaint()
       -- If a timeout isn't given at first, then SIGINT isn't
       -- handled correctly.
       l.timeout(100000)
       while true do
 	 ::continue::
-	 local ch
-	 repeat ch = l.getch() until ch >= 0
-	 if ch == k.resize then
+	 l.doupdate()
+	 local key
+	 repeat key = l.getch() until key >= 0
+	 if key == k.resize then
 	    -- 1/5 sec
 	    l.timeout(200)
-	    repeat ch = l.getch() until ch ~= k.resize
+	    repeat key = l.getch() until key ~= k.resize
 	    l.timeout(0)
-	    local _,_,rows,cols = l.getdims()
-	    -- Screen repaint here.
-	    if ch == -1 then goto continue end
+	    -- We need to guarantee the current line is displayed if it
+	    -- it goes off the bottom.  Center it?
+	    repaint()
+	    if key == -1 then goto continue end
 	 end
-	 if ch == k['ctrl/space'] then break end
-	 if ch == k['ctrl/l'] then
-	    -- Screen repaint here.
+	 -- Regardless if ctrl/c is SIGINT, it quits the editor.
+	 if key == k['ctrl/c'] then break end
+	 local char = key < 256 and string.char(key) or 0
+	 if key == k['ctrl/l'] then
+	    repaint()
 	    goto continue
+	 elseif key == k.right then
+	    if current_series < #series_sorted then
+	       select_series(current_series + 1)
+	    end
+	 elseif key == k.left then
+	    if current_series > 1 then
+	       select_series(current_series - 1)
+	    end
+	 elseif char == '<' then
+	    select_series(1)
+	 elseif char == '>' then
+	    select_series(#series_sorted)
 	 end
-	 l.addstr '*'
       end
    end
-   
+
    l.init_curses()
    l.start_color()
    l.init_pair(1, a.white, a.blue)
    l.bkgd(l.color_pair(1))
+   l.attron(a.bold)
    l.refresh()
-   draw_series_window()
-   l.move(10,10)
-   pcall(do_editor)
+   local result={pcall(do_editor)}
    l.endwin()
+   if not result[1] then print(unpack(result)) end
+   tagset.current_series = current_series
+   tagset.current_package = current_package
    print 'Editor finished'
 end
 
