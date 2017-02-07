@@ -459,7 +459,7 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
     };
 
     static intconst keys_const[] = {
-	{"ctrl/space",	0},
+	{"ctrl_space",	0},
 	{"delete",	127},
 	{"insert",	KEY_IC},
 	{"del",		KEY_DC},
@@ -496,7 +496,7 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
     lua_pushstring(L, "keys");
     lua_newtable(L);
     for (int i = 0; i < 26; i++) {
-	char name[7] = "ctrl/?";
+	char name[7] = "ctrl_?";
 	name[5] = i+'a';
 	lua_pushstring(L, name);
 	lua_pushinteger(L, i+1);
