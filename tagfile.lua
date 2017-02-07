@@ -629,6 +629,7 @@ function edit_tagset(tagset)
    local category = tagset.categories[series_sorted[current_series]]
    local packages_window
    local series_tops = tagset.series_tops or {}
+   -- These might need adjusting if the window's changed size
    local current_top = series_tops[current_series] or 1
 
 
@@ -641,7 +642,7 @@ function edit_tagset(tagset)
       l.noutrefresh()
    end
 
-   local function repaint_package_list()
+   local function redraw_package_list()
       if not packages_window then
 	 packages_window = l.newwin(package_lines,cols-2,3,1)
 	 l.bkgd(packages_window, l.color_pair(1))
@@ -682,7 +683,7 @@ function edit_tagset(tagset)
 	 l.delwin(packages_window)
 	 packages_window = nil
       end
-      repaint_package_list()
+      redraw_package_list()
    end
 
    local function select_series(new_series)
@@ -717,9 +718,9 @@ function edit_tagset(tagset)
 	    if key == -1 then goto continue end
 	 end
 	 -- Regardless if ctrl/c is SIGINT, it quits the editor.
-	 if key == k['ctrl/c'] then break end
+	 if key == k.ctrl_c then break end
 	 local char = key < 256 and string.char(key) or 0
-	 if key == k['ctrl/l'] then
+	 if key == k.ctrl_l then
 	    repaint()
 	    goto continue
 	 elseif key == k.right then
@@ -729,6 +730,29 @@ function edit_tagset(tagset)
 	 elseif key == k.left then
 	    if current_series > 1 then
 	       select_series(current_series - 1)
+	    end
+	 elseif key == k.down then
+	    if current_top <= #category - package_lines then
+	       -- Clear visual for selected package
+	       current_top = current_top + 1
+	       l.move(packages_window, 0, 0)
+	       l.insdelln(packages_window, -1)
+	       l.move(packages_window, package_lines - 1, 0)
+	       local tuple = category[current_top + package_lines - 1]
+	       l.addstr(packages_window, tuple.tag)
+	       -- Now change and show selected package
+	       l.noutrefresh(packages_window)
+	    end
+	 elseif key == k.up then
+	    if current_top > 1 then
+	       -- Clear visual for selected package
+	       current_top = current_top - 1
+	       l.move(packages_window, 0, 0)
+	       l.insdelln(packages_window, 1)
+	       local tuple = category[current_top]
+	       l.addstr(packages_window, tuple.tag)
+	       -- Now change and show selected package
+	       l.noutrefresh(packages_window)
 	    end
 	 elseif char == '<' then
 	    select_series(1)
@@ -749,6 +773,9 @@ function edit_tagset(tagset)
    if not result[1] then print(unpack(result)) end
    tagset.current_series = current_series
    tagset.current_package = current_package
+   series_tops[current_series] = current_top
+   tagset.series_tops = series_tops
+   tagset.last_window_size = {rows, cols}
    print 'Editor finished'
 end
 
