@@ -625,13 +625,24 @@ function edit_tagset(tagset)
    local _
    for k in pairs(tagset.categories) do table.insert(series_sorted, k) end
    table.sort(series_sorted)
-   local current_series = tagset.current_series or 1
-   local category = tagset.categories[series_sorted[current_series]]
+   local current_series
+   local category
    local packages_window
-   local series_tops = tagset.series_tops or {}
-   -- These might need adjusting if the window's changed size
-   local current_top = series_tops[current_series] or 1
-
+   if not tagset.package_cursors then tagset.package_cursors = {} end
+   local package_cursors = tagset.package_cursors
+   local package_cursor = package_cursors[current_series] or 1
+   local colors = {}
+   local state_signs = { SKP='-', ADD='+', OPT='?', REC=' ' }
+   local viewport_top
+   if not tagset.maxtaglen then
+      local maxtaglen = 0
+      for tag,_ in pairs(tagset.tags) do
+	 if #tag > maxtaglen then maxtaglen = #tag end
+      end
+      tagset.maxtaglen = maxtaglen
+   end
+   local maxtaglen = tagset.maxtaglen
+   local tagformat = '%-'..maxtaglen..'s'
 
    local function show_series()
       l.move(1, 9)
@@ -642,24 +653,67 @@ function edit_tagset(tagset)
       l.noutrefresh()
    end
 
+   local function draw_package(tuple, line, selected)
+      -- This will be a table, so outstr will be computed somehow
+      local outstr = tagformat:format(tuple.tag)
+      l.move(packages_window, line, 0)
+      l.clrtoeol(packages_window)
+      if tuple.shortdescr then
+	 outstr = outstr..' - '..tuple.shortdescr
+      end
+      l.attron(packages_window, colors[tuple.state])
+      l.addstr(packages_window, state_signs[tuple.state])
+      l.attroff(packages_window, colors[tuple.state])
+      if tuple.state == tuple.old_state then
+	 l.addstr(packages_window, ' ')
+      else
+	 l.attron(packages_window, colors[tuple.old_state])
+	 l.addch(packages_window, b.diamond)
+	 l.attroff(packages_window, colors[tuple.old_state])
+      end
+      if selected then
+	 l.attron(packages_window, colors.highlight)
+	 l.addnstr(packages_window, outstr, cols-4)
+	 l.attroff(packages_window, colors.highlight)
+	 l.move(1, cols-10)
+	 l.addnstr(''..package_cursor..'/'..#category, 9)
+	 if tuple.version then
+	    local pkgdescr =
+	       string.format('%s-%s-%s-%s  state: %s',
+			     tuple.tag,
+			     tuple.version,
+			     tuple.arch,
+			     tuple.build,
+			     tuple.state)
+	    if tuple.state ~= tuple.old_state then
+	       pkgdescr = pkgdescr..' was: '..tuple.old_state
+	    end
+	    l.move(rows-2,2)
+	    l.addnstr(pkgdescr..spaces, cols - 4)
+	 end
+      else
+	 l.addnstr(packages_window, outstr, cols-4)
+      end
+   end
+
    local function redraw_package_list()
       if not packages_window then
 	 packages_window = l.newwin(package_lines,cols-2,3,1)
 	 l.bkgd(packages_window, l.color_pair(1))
       end
-      local current_line = current_top
-      for lineno = 1, package_lines do
-	 if current_line > #category then break end
-	 local tuple = category[current_line]
-	 l.move(packages_window, lineno - 1, 0)
-	 l.addstr(packages_window, tuple.tag)
-	 current_line = current_line + 1
+      local cursor = package_cursor
+      viewport_top = package_cursor - package_lines / 2
+      if viewport_top < 1 then viewport_top = 1 end
+      local top = viewport_top
+      for i=1,package_lines do
+	 local tuple=category[top+i-1]
+	 if not tuple then break end
+	 draw_package(tuple, i-1, package_cursor == top+i-1)
+	 cursor = cursor+1
       end
-      l.noutrefresh(packages_window)
    end
 
    local function repaint()
-      local oldrows, oldcols = rows, cols
       _,_,rows,cols = l.getdims()
       -- Adjust packages pane as necessary
       package_lines = rows - 6
@@ -684,20 +738,35 @@ function edit_tagset(tagset)
 	 packages_window = nil
       end
       redraw_package_list()
+      l.noutrefresh(packages_window)
    end
 
    local function select_series(new_series)
       if new_series ~= current_series then
-	 series_tops[current_series] = current_top
-	 current_top = series_tops[new_series] or 1
+	 if current_series then
+	    package_cursors[current_series] = package_cursor
+	 end
+	 package_cursor = package_cursors[new_series] or 1
 	 category = tagset.categories[series_sorted[new_series]]
 	 current_series = new_series
 	 repaint()
       end
    end
 
-   local function do_editor()
+   local function change_state(tuple, new_state, line)
+      if not new_state then
+	 new_state = tuple.state == 'ADD' and 'SKP' or 'ADD'
+      end
+      if new_state ~= tuple.state then
+	 tuple.state = new_state
+	 tagset.dirty = true
+	 draw_package(tuple, line, true)
+	 repaint()
+      end
+   end
 
+   local function do_editor()
+      select_series(tagset.current_series or 1)
       repaint()
       -- If a timeout isn't given at first, then SIGINT isn't
       -- handled correctly.
@@ -712,8 +781,8 @@ function edit_tagset(tagset)
 	    l.timeout(200)
 	    repeat key = l.getch() until key ~= k.resize
 	    l.timeout(0)
-	    -- We need to guarantee the current line is displayed if it
-	    -- it goes off the bottom.  Center it?
+	    -- We need to recompute these.
+	    viewport_tops = {}
 	    repaint()
 	    if key == -1 then goto continue end
 	 end
@@ -725,39 +794,83 @@ function edit_tagset(tagset)
 	    goto continue
 	 elseif key == k.right then
 	    if current_series < #series_sorted then
-	       select_series(current_series + 1)
+	       select_series(current_series+1)
 	    end
 	 elseif key == k.left then
 	    if current_series > 1 then
-	       select_series(current_series - 1)
+	       select_series(current_series-1)
 	    end
+	 elseif key == k.home then
+	    package_cursor = 1
+	    repaint()
+	 elseif key == k['end'] then
+	    package_cursor = #category
+	    repaint()
 	 elseif key == k.down then
-	    if current_top <= #category - package_lines then
-	       -- Clear visual for selected package
-	       current_top = current_top + 1
-	       l.move(packages_window, 0, 0)
-	       l.insdelln(packages_window, -1)
-	       l.move(packages_window, package_lines - 1, 0)
-	       local tuple = category[current_top + package_lines - 1]
-	       l.addstr(packages_window, tuple.tag)
-	       -- Now change and show selected package
-	       l.noutrefresh(packages_window)
+	    if package_cursor < #category then
+	       package_cursor = package_cursor+1
+	       if package_cursor == viewport_top + package_lines then
+		  repaint()
+	       else
+		  local tuple = category[package_cursor-1]
+		  draw_package(tuple, package_cursor-viewport_top-1, false)
+		  tuple = category[package_cursor]
+		  draw_package(tuple, package_cursor-viewport_top, true)
+		  l.noutrefresh(packages_window)
+	       end
 	    end
 	 elseif key == k.up then
-	    if current_top > 1 then
-	       -- Clear visual for selected package
-	       current_top = current_top - 1
-	       l.move(packages_window, 0, 0)
-	       l.insdelln(packages_window, 1)
-	       local tuple = category[current_top]
-	       l.addstr(packages_window, tuple.tag)
-	       -- Now change and show selected package
-	       l.noutrefresh(packages_window)
+	    if package_cursor > 1 then
+	       package_cursor = package_cursor - 1
+	       if package_cursor < viewport_top then
+		  repaint()
+	       else
+		  local tuple = category[package_cursor+1]
+		  draw_package(tuple, package_cursor-viewport_top+1, false)
+		  tuple = category[package_cursor]
+		  draw_package(tuple, package_cursor-viewport_top, true)
+		  l.noutrefresh(packages_window)
+	       end
+	    end
+	 elseif key == k.page_down then
+	    if package_cursor < #category then
+	       package_cursor = package_cursor + package_lines / 2
+	       if package_cursor > #category then
+		  package_cursor = #category
+	       end
+	       repaint()
+	    end
+	 elseif key == k.page_up then
+	    if package_cursor > 1 then
+	       package_cursor = package_cursor - package_lines / 2
+	       if package_cursor < 1 then
+		  package_cursor = 1
+	       end
+	       repaint()
 	    end
 	 elseif char == '<' then
 	    select_series(1)
 	 elseif char == '>' then
 	    select_series(#series_sorted)
+	 elseif char == '+' then
+	    change_state(category[package_cursor], 'ADD',
+			 package_cursor-viewport_top)
+	 elseif char == '-' then
+	    change_state(category[package_cursor], 'SKP',
+			 package_cursor-viewport_top)
+	 elseif char == '?' then
+	    change_state(category[package_cursor], 'OPT',
+			 package_cursor-viewport_top)
+	 elseif char == '/' then
+	    change_state(category[package_cursor], 'REC',
+			 package_cursor-viewport_top)
+	 elseif char == '=' then
+	    change_state(category[package_cursor],
+			 category[package_cursor].old_state,
+			 package_cursor-viewport_top)
+	 elseif char == ' ' then
+	    change_state(category[package_cursor], nil,
+			 package_cursor-viewport_top)
 	 end
       end
    end
@@ -765,6 +878,15 @@ function edit_tagset(tagset)
    l.init_curses()
    l.start_color()
    l.init_pair(1, a.white, a.blue)
+   l.init_pair(2, a.cyan, a.blue)
+   l.init_pair(3, a.green, a.blue)
+   l.init_pair(4, a.red, a.blue)
+   l.init_pair(5, a.yellow, a.blue)
+   colors.highlight = bit.bor(l.color_pair(2), a.bold)
+   colors.ADD = bit.bor(l.color_pair(3), a.bold)
+   colors.SKP = bit.bor(l.color_pair(4), a.bold)
+   colors.OPT = bit.bor(l.color_pair(5), a.bold)
+   colors.REC = 0
    l.bkgd(l.color_pair(1))
    l.attron(a.bold)
    l.refresh()
@@ -772,72 +894,6 @@ function edit_tagset(tagset)
    l.endwin()
    if not result[1] then print(unpack(result)) end
    tagset.current_series = current_series
-   tagset.current_package = current_package
-   series_tops[current_series] = current_top
-   tagset.series_tops = series_tops
-   tagset.last_window_size = {rows, cols}
+   package_cursors[current_series] = package_cursor
    print 'Editor finished'
 end
-
-
---[[ This is for testing
-l=require 'ljcurses'
-
-do
-   local errmsg
-   function with_curses(fn, ...)
-      if not errmsg then
-	 l.init_curses()
-	 if l.start_color() then
-	    l.refresh()
-	    fn(...)
-	 else
-	    errmsg='\nYou need a color terminal to do this!'
-	 end
-	 l.endwin()
-      end
-      print(errmsg or '')
-   end
-end
-
-
-function show_descr(tagset, tag)
-   with_curses(function (ARGS)
-	 l.init_pair(1, a.green, a.black)
-	 local bx = l.newwin(22,74,2,2)
-	 local data = l.newwin(20,72,3,3)
-	 l.bkgd(bx, l.color_pair(1))
-	 l.attron(bx,a.bold)
-	 l.bkgd(data, l.color_pair(0))
-	 l.attron(data,a.bold)
-	 l.box(bx,b.vline,b.hline)
-	 l.move(data, 0, 0)
-	 local tuple = tagset.tags[tag]
-	 if not tuple.description then
-	    l.addstr(data, 'No description for: '..tag)
-	 else
-	    l.addnstr(data, string.format('%s/%s  %s  %s  %s  (%s)',
-					  tuple.category,
-					  tuple.tag, tuple.version,
-					  tuple.arch, tuple.build,
-					  tuple.state), 72)
-	    l.move(data, 1, 0)
-	    l.addnstr(data, tuple.shortdescr or 'NO SHORT DESCRIPTION', 72)
-	    l.move(data, 2, 0)
-	    l.hline(data, 0, 71)
-	    local row = 3
-	    for _,line in pairs(tuple.description()) do
-	       l.move(data, row, 0)
-	       row = row + 1;
-	       if row > 19 then break end
-	       l.addnstr(data, line:match '^ ?(.*)$', 72)
-	    end
-	 end
-	 l.noutrefresh(bx)
-	 l.noutrefresh(data)
-	 l.doupdate()
-	 l.getch()
-   end)
-
-end
---]]
