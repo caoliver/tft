@@ -27,26 +27,28 @@ local function case_insensitive_less_than(a,b)
    return string.lower(a) < string.lower(b)
 end
 
-local make_tmpdir, rm_tmpdir =
-   -- How I miss Scheme's "let"
-   (function ()
-	 local tmpdir, tmpdirlen
-	 return function ()
-	    if not tmpdir then
-	       local pipe = io.popen 'mktemp -d 2>&-'
-	       local dirname
-	       if pipe then
-		  tmpdir = pipe:read '*l'
-		  tmpdirlen = #tmpdir
-		  pipe:close()
-	       end
-	    end
-	    return tmpdir, tmpdirlen
-	 end,
-	 function ()
-	    if tmpdir then os.execute('rm -rf '..tmpdir) end
+local make_tmpdir, rm_tmpdir
+do
+   local tmpdir, tmpdirlen
+   function make_tmpdir()
+      if not tmpdir then
+	 local pipe = io.popen 'mktemp -d 2>&-'
+	 local dirname
+	 if pipe then
+	    tmpdir = pipe:read '*l'
+	    tmpdirlen = #tmpdir
+	    pipe:close()
 	 end
-   end)()
+      end
+      return tmpdir, tmpdirlen
+   end
+   function rm_tmpdir()
+      if tmpdir then
+	 os.execute('rm -rf '..tmpdir)
+	 tmpdir = nil
+      end
+   end
+end
 
 function getch(prompt, pattern, default)
    os.execute 'stty cbreak -echo'
@@ -64,7 +66,7 @@ end
 -- TEMPORARY GLOBAL FOR TESTING.
 rmtd = rm_tmpdir
 
-function make_archive_set(archive_file)
+function read_archive(archive_file)
    function satisfy(self, root)
       local root = root or ''
       local paths, seen = {}, {}
