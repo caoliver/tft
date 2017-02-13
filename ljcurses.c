@@ -102,6 +102,12 @@ LUAFN(timeout)
     return 0;
 }
 
+LUAFN(curs_set)
+{
+    lua_pushinteger(L, curs_set(luaL_checkinteger(L, 1)));
+    return 1;
+}
+
 
 LUAFN(doupdate)
 {
@@ -394,6 +400,7 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
 	FN_ENTRY(endwin),
 	FN_ENTRY(getch),
 	FN_ENTRY(timeout),
+	FN_ENTRY(curs_set),
 	
 	FN_ENTRY(doupdate),
 	FN_ENTRY(refresh),
