@@ -1,7 +1,11 @@
+// Needed for clock_gettime() and friends.
+#define _POSIX_C_SOURCE 199309
+
 #include <signal.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include <time.h>
 #include "lua_head.h"
 
 uint64_t xxhfd(int fd, uint64_t seed);
@@ -21,6 +25,16 @@ LUAFN(catch_signals)
     return 0;
 }
 #endif
+
+LUAFN(cputime)
+{
+    struct timespec result;
+
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &result);
+
+    lua_pushnumber(L, (double)result.tv_sec + 1E-9 * (double)result.tv_nsec);
+    return 1;
+}
 
 LUAFN(xxhsum_file)
 {
@@ -51,6 +65,7 @@ LUALIB_API int luaopen_util(lua_State *L)
 {
     static const luaL_Reg funcptrs[] = {
 //	FN_ENTRY(catch_signals),
+	FN_ENTRY(cputime),
 	FN_ENTRY(xxhsum_file),
 	FN_ENTRY(lib_exists),
 	{ NULL, NULL }
