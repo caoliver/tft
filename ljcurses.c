@@ -468,6 +468,11 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
     static intconst keys_const[] = {
 	{"ctrl_space",	0},
 	{"delete",	127},
+	{"escape",	27},	/*  Ctrl [  */
+	{"grpsep",	28},	/*  Ctrl \  */
+	{"fldsep",	29},	/*  Ctrl ]  */
+	{"recsep",	30},	/*  Ctrl ^  */
+	{"unitsep",	31},	/*  Ctrl -  */
 	{"insert",	KEY_IC},
 	{"del",		KEY_DC},
 	{"home",	KEY_HOME},
