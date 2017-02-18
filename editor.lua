@@ -321,7 +321,7 @@ function edit_tagset(tagset)
 	       all_series = not all_series
 	       select_restrict(has_restriction, all_series)
 	    end
-	 elseif key >= 32 and key <= 126 then
+	 elseif key > 32 and key < 127 then
 	    if not has_restriction then
 	       has_restriction=''
 	       all_series = nil
