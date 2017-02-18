@@ -34,7 +34,7 @@ end
 local searchmax = 24
 
 function edit_tagset(tagset)
-   local rows, cols, subwin_lines
+   local rows, cols, subwin_lines, half_subwin
    local series_sorted = {}
    local _
    for k in pairs(tagset.categories) do table.insert(series_sorted, k) end
@@ -153,18 +153,23 @@ function edit_tagset(tagset)
 
    local function redraw_package_list()
       if not package_window then
-	 package_window = l.newwin(subwin_lines,cols-2,3,1)
+	 package_window = l.newwin(subwin_lines, cols-2, 3, 1)
 	 l.bkgd(package_window, l.color_pair(1))
       end
       local cursor = package_cursor
-      viewport_top = package_cursor - subwin_lines / 2
+      viewport_top = package_cursor - half_subwin
       if viewport_top < 1 then viewport_top = 1 end
       local top = viewport_top
       for i=1,subwin_lines do
-	 local tuple=package_list[top+i-1]
+	 local selected = top+i-1
+	 local tuple=package_list[selected]
 	 if not tuple then break end
-	 draw_package(tuple, i-1, package_cursor == top+i-1)
+	 draw_package(tuple, i-1, package_cursor == selected)
 	 cursor = cursor+1
+      end
+      if #package_list == 0 then
+	 l.move(package_window, half_subwin, cols/2 - 8)
+	 l.addstr(package_window, "* NO PACKAGES *")
       end
       show_restriction()
       l.noutrefresh(package_window)
@@ -173,7 +178,7 @@ function edit_tagset(tagset)
    local function draw_description()
       local descr_lines = show_descr and show_descr() or {}
       if not descr_window then
-	 descr_window = l.newwin(subwin_lines,cols-2,3,1)
+	 descr_window = l.newwin(subwin_lines, cols-2, 3, 1)
 	 l.bkgd(descr_window, colors.description)
       end
       for i = 1,subwin_lines do
@@ -187,6 +192,7 @@ function edit_tagset(tagset)
    local function repaint()
       _,_,rows,cols = l.getdims()
       subwin_lines = rows - 6
+      half_subwin = math.floor(subwin_lines/2)
       l.move(0,0)
       l.clrtobot()
       l.box(b.vline,b.hline)
@@ -378,7 +384,7 @@ function edit_tagset(tagset)
 	    end
 	 elseif key == k.page_down then
 	    if package_cursor < #package_list then
-	       package_cursor = package_cursor + subwin_lines / 2
+	       package_cursor = package_cursor + half_subwin
 	       if package_cursor > #package_list then
 		  package_cursor = #package_list
 	       end
@@ -386,7 +392,7 @@ function edit_tagset(tagset)
 	    end
 	 elseif key == k.page_up then
 	    if package_cursor > 1 then
-	       package_cursor = package_cursor - subwin_lines / 2
+	       package_cursor = package_cursor - half_subwin
 	       if package_cursor < 1 then
 		  package_cursor = 1
 	       end
