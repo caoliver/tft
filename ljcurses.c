@@ -61,38 +61,36 @@ LUAFN(endwin)
 
 LUAFN(getch)
 {
-    int k;
-    enum { DONE, ESC1, ESC2 } state = DONE;
+    int key;
+    int escape_seen = 0;
+    char escape_sequence[32];
+    int sequence_end = 0;
 
-    // Skip escape sequences.
     for (;;) {
-	k=getch();
-	if (k < 0 && state == ESC1) {
-	    k = 27;
+	key=getch();
+	if (key < 0 && escape_seen) {
+	    key = 27;
 	    goto done;
 	}
-	switch(state) {
-	case DONE:
-	    if (k != 27)
+	if (!escape_seen) {
+	    if (key != 27)
 		goto done;
-	    state = ESC1;
+	    escape_seen=1;
 	    timeout(ESC_DELAY);
-	    break;
-	case ESC1:
-	    if (k != 'O' && k != '[')
-		goto done;
-	    state = ESC2;
-	    break;
-	case ESC2:
-	    if (!isdigit(k) && k != ';')
-		state = DONE;
-	}
+	} else if (sequence_end < sizeof(escape_sequence)) 
+	    escape_sequence[sequence_end++] = key;
     }
 
 done:
     timeout(curtimeout);
-    lua_pushinteger(L, k);
-    return 1;
+    if (sequence_end == 0) {
+	lua_pushinteger(L, key);
+	return 1;
+    } else {
+	lua_pushinteger(L, 27);
+	lua_pushlstring(L, escape_sequence, sequence_end);
+	return 2;
+    }
 }
 
 LUAFN(timeout)
