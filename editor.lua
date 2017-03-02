@@ -14,7 +14,15 @@ function debug(...)
    end
    debugout:write '\r\n'
 end
+
+opendebug(FOO)
 --]]
+
+local function make_char_bool(str)
+   local booltab = {}
+   for ix=1,#str do booltab[str:sub(ix,ix)] = true end
+   return booltab
+end
 
 local l = require 'ljcurses'
 local a = l.attributes
@@ -22,31 +30,41 @@ local b = l.boxes
 local k = l.keys
 local delete_keys = { [k.del]=true, [k.delete]=true, [k.backspace]=true }
 local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
-local search_char = {}
-do
-   local valid =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZ'..
-      'abcdefghijklmnopqrstuvwxyz'..
-      '0123456789'..
-      '-_'
-   for ix=1,#valid do search_char[valid:sub(ix,ix)] = true end
+local excluded_char = make_char_bool '<>/'
+
+local function assert(bool, ...)
+   if not bool then l.endwin() end
+   return _G.assert(bool, ...)
 end
-local searchmax = 24
 
 function edit_tagset(tagset)
-   local rows, cols, subwin_lines, half_subwin
-   local series_sorted = {}
-   local _
-   for k in pairs(tagset.categories) do table.insert(series_sorted, k) end
-   table.sort(series_sorted)
-   local current_series
-   local package_list
-   local package_window
-   if not tagset.package_cursors then tagset.package_cursors = {} end
-   local package_cursors = tagset.package_cursors
-   local package_cursor = package_cursors[current_series] or 1
-   local colors = {}
-   local viewport_top
+   local categories_sorted = tagset.categories_sorted
+   local category_index = tagset.category_index or {}
+   if not tagset.categories_sorted then
+      categories_sorted = {}
+      for k in pairs(tagset.categories) do
+	 table.insert(categories_sorted, k)
+      end
+      table.sort(categories_sorted)
+      tagset.categories_sorted = categories_sorted
+      for ix, category in ipairs(categories_sorted) do
+	 category_index[category] = ix
+      end
+      tagset.category_index = category_index
+   end
+   local package_cursors = {}
+   local current_category
+   local package_cursor
+   local last_package = tagset.last_package
+   if last_package then
+      current_category = category_index[last_package.category]
+      package_cursor = last_package.category_index
+   else
+      last_package = tagset.categories[categories_sorted[1]]
+      current_category = 1
+      package_cursor = 1
+   end
+   local package_list = tagset.categories[categories_sorted[current_category]]
    if not tagset.maxtaglen then
       local maxtaglen = 0
       for tag,_ in pairs(tagset.tags) do
@@ -56,46 +74,32 @@ function edit_tagset(tagset)
    end
    local maxtaglen = tagset.maxtaglen
    local tagformat = '%-'..maxtaglen..'s'
+   local colors = {}
+   local viewport_top
    local state
+   local current_constraint
    local descr_window
-   local has_restriction
-   local all_series
+   local package_window
+   local rows, cols, subwin_lines, half_subwin
+   
 
-   local function make_restricted_list (restriction, series_number)
-      local result = {}
-      local series_set =
-	 series_number and { series_number } or series_sorted
-      if pcall(string.find, '', restriction) then
-	 for _, series in ipairs(series_set) do
-	    local cat = tagset.categories[series]
-	    for _, tuple in ipairs(cat) do
-	       if tuple.tag:find(restriction) then
-		  table.insert(result, tuple)
-	       end
-	    end
-	 end
-      end
-      return result
-   end
-
-   local function show_restriction()
-      if has_restriction then
-	 l.move(rows-2, cols - #has_restriction-2)
+   local function show_constraint()
+      if current_constraint then
+	 l.move(rows-2, cols - #current_constraint-2)
 	 local color
 	 if #package_list == 0 then
 	    color = colors.nomatch
-	 elseif all_series then
-	    color = colors.all
 	 else
 	    color = colors.highlight
 	 end
 	 l.attron(color)
-	 l.addstr(has_restriction)
+	 l.addstr(current_constraint)
 	 l.attroff(color)
 	 l.attron(colors.main)
       end
    end
 
+   -- global refs: package_cursor, package_list, package_window
    local function draw_package(tuple, line, selected)
       l.move(package_window, line, 0)
       l.clrtoeol(package_window)
@@ -118,12 +122,12 @@ function edit_tagset(tagset)
 	 local outmax=cols-4
 	 l.addnstr(package_window, outstr, outmax)
 	 l.attroff(package_window, colors.highlight)
-	 l.move(1, 9)
+	 l.move(1, 11)
 	 l.clrtoeol()
 	 l.move(1, cols-1)
 	 l.addch(b.vline)
-	 l.move(1, cols-10)
-	 l.addnstr(''..package_cursor..'/'..#package_list, 9)
+	 l.move(1, cols-12)
+	 l.addnstr('  '..package_cursor..'/'..#package_list, 13)
 	 l.move(rows-2,2)
 	 l.clrtoeol()
 	 l.move(rows-2, cols-1)
@@ -142,7 +146,7 @@ function edit_tagset(tagset)
 	    end
 	    l.addnstr(pkgdescr, cols - 4)
 	 end
-	 l.move(1, 9)
+	 l.move(1, 11)
 	 local descrs=tagset.category_description[tuple.category]
 	 l.addnstr(tuple.category ..
 		      (descrs and (' - '..descrs.short) or ''), cols - 10)
@@ -151,27 +155,26 @@ function edit_tagset(tagset)
       end
    end
 
+   -- global refs: package_cursor, package_list, package_window, viewport_top
    local function redraw_package_list()
       if not package_window then
 	 package_window = l.newwin(subwin_lines, cols-2, 3, 1)
-	 l.bkgd(package_window, l.color_pair(1))
+	 l.bkgd(package_window, colors.main)
       end
-      local cursor = package_cursor
       viewport_top = package_cursor - half_subwin
       if viewport_top < 1 then viewport_top = 1 end
       local top = viewport_top
-      for i=1,subwin_lines do
-	 local selected = top+i-1
+      for i=0,subwin_lines-1 do
+	 local selected = top+i
 	 local tuple=package_list[selected]
 	 if not tuple then break end
-	 draw_package(tuple, i-1, package_cursor == selected)
-	 cursor = cursor+1
+	 draw_package(tuple, i, package_cursor == selected)
       end
       if #package_list == 0 then
 	 l.move(package_window, half_subwin, cols/2 - 8)
 	 l.addstr(package_window, "* NO PACKAGES *")
       end
-      show_restriction()
+      show_constraint()
       l.noutrefresh(package_window)
    end
 
@@ -202,7 +205,7 @@ function edit_tagset(tagset)
       l.move(2,cols-1)
       l.addch(b.rtee)
       l.move(1,1)
-      l.addstr('Series:')
+      l.addstr('Category:')
       l.move(rows-3,0)
       l.addch(b.ltee)
       l.hline(b.hline, cols-2)
@@ -224,43 +227,70 @@ function edit_tagset(tagset)
       -- What else do we need to redraw here?
    end
 
-   local function select_restrict(restriction, all_series)
-      if not restriction then
-	 if has_restriction then
-	    has_restriction = nil
-	    package_list = tagset.categories[series_sorted[current_series]]
-	    repaint()
+   -- Constraint stuff
+   -- TODO
+   local function clear_constraint()
+      if current_constraint then
+	 assert(last_package, "last_package not assigned")
+	 current_constraint = nil
+	 if #package_list > 0 then
+	    last_package = package_list[package_cursor]
 	 end
-	 return
+	 current_category = category_index[last_package.category]
+	 package_cursor = last_package.category_index
+	 package_list = tagset.categories[last_package.category]
+	 repaint()
       end
+   end
 
+   -- 
+   local function constrain(constraint, old_constraint)
+      assert(last_package, "last_package not assigned")
+      if not old_constraint then
+	 package_cursors[current_category] = package_cursor
+      end
+      if #package_list > 0 then
+	 last_package = package_list[package_cursor]
+      end
+      current_constraint = constraint
+      local new_cursor = 1
       package_list = {}
-      local series_set =
-	 all_series and series_sorted or { series_sorted[current_series] }
-      if pcall(string.find, '', restriction) then
-	 for _, series in ipairs(series_set) do
-	    local cat = tagset.categories[series]
+      if pcall(string.find, '', constraint) then
+	 local insert_number=1
+	 for _, category in ipairs(categories_sorted) do
+	    local cat = tagset.categories[category]
 	    for _, tuple in ipairs(cat) do
-	       if tuple.tag:find(restriction) then
+	       if tuple.tag:find(constraint) then
 		  table.insert(package_list, tuple)
+		  if tuple == last_package then
+		     new_cursor = insert_number
+		  end
+		  insert_number = insert_number+1
 	       end
 	    end
 	 end
       end
-      has_restriction = restriction
-      repaint()
+      if #package_list > 0 then
+	 new_package = package_list[new_cursor]
+	 if new_package.category ~= last_package.category then
+	    current_category = category_index[new_package.category]
+	 end
+	 package_cursor = new_cursor
+      end
    end
 
-   local function select_series(new_series)
-      if has_restriction then select_restrict(false) end
-      if new_series ~= current_series then
-	 if current_series then
-	    package_cursors[current_series] = package_cursor
-	 end
-	 package_cursor = package_cursors[new_series] or 1
-	 package_list = tagset.categories[series_sorted[new_series]]
-	 current_series = new_series
-	 repaint()
+   local function select_category(new_category)
+      if current_constraint then return end
+      local save_package = last_package
+      if #package_list > 0 then
+	 save_package = package_list[package_cursor]
+      end
+      if current_constraint then clear_constraint() end
+      if new_category ~= current_category then
+	 package_cursors[current_category] = save_package.category_index
+	 package_cursor = package_cursors[new_category] or 1
+	 package_list = tagset.categories[categories_sorted[new_category]]
+	 current_category = new_category
       end
    end
 
@@ -276,8 +306,7 @@ function edit_tagset(tagset)
       end
    end
 
-   local function do_editor()
-      select_series(tagset.current_series or 1)
+   local function command_loop()
       repaint()
       -- If a timeout isn't given at first, then SIGINT isn't
       -- handled correctly.
@@ -293,7 +322,6 @@ function edit_tagset(tagset)
 	    repeat key = l.getch() until key ~= k.resize
 	    l.timeout(0)
 	    -- We need to recompute these.
-	    viewport_tops = {}
 	    repaint()
 	    if key == -1 then goto continue end
 	 end
@@ -313,41 +341,42 @@ function edit_tagset(tagset)
 	    state = 'describe'
 	    show_descr = package_list[package_cursor].description
 	    repaint()
-	 -- Restriction
+	 -- Constraint
 	 elseif key == k.escape then
-	    select_restrict()
-	 elseif key == k.unitsep then
-	    if (has_restriction) then
-	       all_series = not all_series
-	       select_restrict(has_restriction, all_series)
-	    end
-	 elseif key > 32 and key < 127 then
-	    if not has_restriction then
-	       has_restriction=''
-	       all_series = nil
-	    end
-	    if #has_restriction < 16 then
-	       has_restriction = has_restriction..char
-	       select_restrict(has_restriction, all_series)
+	    clear_constraint()
+	    repaint()
+	 elseif key == k.ctrl_u then
+	    constrain('', current_constraint)
+	    repaint()
+	 elseif key >= 32 and key < 127 and not excluded_char[char] then
+	    local new_constraint = current_constraint
+	    if not current_constraint then new_constraint = '' end
+	    if #new_constraint < 16 then
+	       constrain(new_constraint..char, current_constraint)
+	       repaint()
 	    end
 	 elseif delete_keys[key] then
-	    if has_restriction and #has_restriction > 0 then
-	       has_restriction = has_restriction:sub(1, -2)
-	       select_restrict(has_restriction, all_series)
+	    if current_constraint then
+	       constrain(current_constraint:sub(1, -2), current_constraint)
+	       repaint()
 	    end
 	 -- Navigation
 	 elseif key == k.right then
-	    if current_series < #series_sorted then
-	       select_series(current_series+1)
+	    if current_category < #categories_sorted then
+	       select_category(current_category+1)
+	       repaint()
 	    end
 	 elseif key == k.left then
-	    if current_series > 1 then
-	       select_series(current_series-1)
+	    if current_category > 1 then
+	       select_category(current_category-1)
+	       repaint()
 	    end
 	 elseif char == '<' then
-	    select_series(1)
+	    select_category(1)
+	    repaint()
 	 elseif char == '>' then
-	    select_series(#series_sorted)
+	    select_category(#categories_sorted)
+	    repaint()
 	 elseif key == k.home then
 	    package_cursor = 1
 	    repaint()
@@ -364,7 +393,7 @@ function edit_tagset(tagset)
 			       package_cursor-viewport_top-1, false)
 		  draw_package(package_list[package_cursor],
 			       package_cursor-viewport_top, true)
-		  show_restriction()
+		  show_constraint()
 		  l.noutrefresh(package_window)
 	       end
 	    end
@@ -378,7 +407,7 @@ function edit_tagset(tagset)
 			       package_cursor-viewport_top+1, false)
 		  draw_package(package_list[package_cursor],
 			       package_cursor-viewport_top, true)
-		  show_restriction()
+		  show_constraint()
 		  l.noutrefresh(package_window)
 	       end
 	    end
@@ -439,16 +468,17 @@ function edit_tagset(tagset)
    colors.REC = 0
    colors.pattern = colors.highlight
    colors.nomatch = colors.SKP
-   colors.all = colors.OPT
    colors.main= bit.bor(l.color_pair(1), a.bold)
    l.bkgd(colors.main)
    l.attron(colors.main)
    l.refresh()
-   local result={pcall(do_editor)}
-   select_restrict(false)
+   local result={pcall(command_loop)}
    l.endwin()
+   clear_constraint()
    if not result[1] then print(unpack(result)) end
-   tagset.current_series = current_series
-   package_cursors[current_series] = package_cursor
+   if not current_constraint then
+      last_package = package_list[package_cursor]
+   end
+   tagset.last_package = last_package
    print 'Editor finished'
 end
