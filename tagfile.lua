@@ -567,10 +567,13 @@ function read_tagset(tagset_directory, skip_kde)
 	    local tuple = {
 	       tag=tag, category=category, state=state, old_state=state }
 	    tagset.tags[tag] = tuple
-	    if not tagset.categories[category] then
-	       tagset.categories[category] = {}
+	    local category_table = tagset.categories[category]
+	    if not category_table then
+	       category_table = {}
+	       tagset.categories[category] = category_table
 	    end
-	    table.insert(tagset.categories[category], tuple)
+	    tuple.category_index = #category_table + 1
+	    table.insert(category_table, tuple)
 	 end
       end
       tagfile:close()
