@@ -93,6 +93,12 @@ done:
     }
 }
 
+LUAFN(keyname)
+{
+    lua_pushstring(L, keyname(luaL_checkinteger(L, 1)));
+    return 1;
+}
+
 LUAFN(timeout)
 {
     curtimeout = luaL_checkinteger(L, 1);
@@ -397,6 +403,7 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
 	FN_ENTRY(init_curses),
 	FN_ENTRY(endwin),
 	FN_ENTRY(getch),
+	FN_ENTRY(keyname),
 	FN_ENTRY(timeout),
 	FN_ENTRY(curs_set),
 	
@@ -471,18 +478,6 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
 	{"fldsep",	29},	/*  Ctrl ]  */
 	{"recsep",	30},	/*  Ctrl ^  */
 	{"unitsep",	31},	/*  Ctrl -  */
-	{"insert",	KEY_IC},
-	{"del",		KEY_DC},
-	{"home",	KEY_HOME},
-	{"page_down",	KEY_NPAGE},
-	{"page_up",	KEY_PPAGE},
-	{"end",		KEY_END},
-	{"down",	KEY_DOWN},
-	{"up",		KEY_UP},
-	{"left",	KEY_LEFT},
-	{"right",	KEY_RIGHT},
-	{"backtab",	KEY_BTAB},
-	{"backspace",	KEY_BACKSPACE},
 	{"resize",	KEY_RESIZE},
 	
 	{NULL, 0}
