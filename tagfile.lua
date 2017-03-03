@@ -184,7 +184,7 @@ function read_tagset(tagset_directory, skip_kde)
 
    tagset_directory = cleanuppath(tagset_directory)
 
-   local function edit(tagset) edit_tagset(tagset) end
+   local function edit(...) return edit_tagset(...) end
 
    local function forget_changes(self, uncache)
       self.dirty = false
@@ -454,40 +454,18 @@ function read_tagset(tagset_directory, skip_kde)
       return new_instance
    end
 
-   local function clone(self)
-      local newset = {
-	 tags = {}, categories = {}, directory = self.directory,
-	 category_description = self.category_description,
-	 write = write_tagset, show=show_like, change_archive=change_archive,
-	 forget=forget_changes, set=set_state, like=like, describe=describe,
-	 compare=compare, missing=missing, clone=clone, edit=edit }
-      for category,tags in ipairs(self.categories) do
-	 local taglist = {}
-	 newset.categories[category] = taglist
-	 for _, tuple in ipairs(tags) do
-	    local newtuple = {}
-	    for k,v in pairs(tuple) do newtuple[k] = v end
-	    newtuple.old_state = newtuple.state
-	    table.insert(taglist, newtuple)
-	    newset.tags[newtuple.tag] = newtuple
-	 end
-      end
-      tagset_list[newset] = true
-      tagset_list_changed = true
-      newset.instance = get_instance(self.directory)
-      return newset
-   end
-
    local function change_archive(self, directory)
-      directory = cleanuppath(directory)
       for _,tuple in pairs(self.tags) do
 	 tuple.version = nil
 	 tuple.arch = nil
 	 tuple.build = nil
 	 tuple.description = nil
 	 tuple.shortdescr = nil
+	 tuple.required = nil
       end
       self.category_description = {}
+      if not directory then return end
+      directory = cleanuppath(directory)
       local txtfiles_pipe =
 	 io.popen('find '..directory..' -name \\*.txt')
       for descr_file in txtfiles_pipe:lines() do
@@ -520,7 +498,12 @@ function read_tagset(tagset_directory, skip_kde)
 		     print('Skipping strange line: '..line)
 		  else
 		     local entry = self.tags[tag]
-		     if entry then entry.shortdescr = descr end
+		     if entry then
+			entry.shortdescr = descr
+			if descr:match 'REQUIRED$' then
+			   entry.required = true
+			end
+		     end
 		  end
 	       end
 	    end
@@ -542,6 +525,31 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
 	 setpkg:close()
       end
+   end
+
+   local function clone(self)
+      local newset = {
+	 tags = {}, categories = {}, directory = self.directory,
+	 category_description = self.category_description,
+	 write = write_tagset, show=show_like, change_archive = change_archive,
+	 forget=forget_changes, set=set_state, like=like, describe=describe,
+	 compare=compare, missing=missing, clone=clone, edit=edit,
+	 change_archive = change_archive, type=type }
+      for category,tags in pairs(self.categories) do
+	 local taglist = {}
+	 newset.categories[category] = taglist
+	 for _, tuple in ipairs(tags) do
+	    local newtuple = {}
+	    for k,v in pairs(tuple) do newtuple[k] = v end
+	    newtuple.old_state = newtuple.state
+	    table.insert(taglist, newtuple)
+	    newset.tags[newtuple.tag] = newtuple
+	 end
+      end
+      tagset_list[newset] = true
+      tagset_list_changed = true
+      newset.instance = get_instance(self.directory)
+      return newset
    end
 
    local tagset = {
