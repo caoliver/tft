@@ -1,4 +1,4 @@
---[[
+-- [[
 function opendebug(ptsnum)
    if debugout then debugout:close() end
    debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
@@ -15,7 +15,7 @@ function debug(...)
    debugout:write '\r\n'
 end
 
-opendebug(FOO)
+opendebug(2)
 --]]
 
 local function make_char_bool(str)
@@ -28,16 +28,15 @@ local l = require 'ljcurses'
 local a = l.attributes
 local b = l.boxes
 local k = l.keys
-local delete_keys = { [k.del]=true, [k.delete]=true, [k.backspace]=true }
 local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
-local excluded_char = make_char_bool '<>/'
+local excluded_char = make_char_bool '<>/ '
 
 local function assert(bool, ...)
    if not bool then l.endwin() end
    return _G.assert(bool, ...)
 end
 
-function edit_tagset(tagset)
+function edit_tagset(tagset, installation)
    local categories_sorted = tagset.categories_sorted
    local category_index = tagset.category_index or {}
    if not tagset.categories_sorted then
@@ -81,11 +80,13 @@ function edit_tagset(tagset)
    local descr_window
    local package_window
    local rows, cols, subwin_lines, half_subwin
-   
+   local installed = installation and installation.tags or {}
 
    local function show_constraint()
       if current_constraint then
-	 l.move(rows-2, cols - #current_constraint-2)
+	 local constraint = #current_constraint > 0 and
+	    current_constraint or '* EMPTY *'
+	 l.move(rows-2, cols - #constraint-2)
 	 local color
 	 if #package_list == 0 then
 	    color = colors.nomatch
@@ -93,7 +94,7 @@ function edit_tagset(tagset)
 	    color = colors.highlight
 	 end
 	 l.attron(color)
-	 l.addstr(current_constraint)
+	 l.addstr(constraint)
 	 l.attroff(color)
 	 l.attron(colors.main)
       end
@@ -104,9 +105,6 @@ function edit_tagset(tagset)
       l.move(package_window, line, 0)
       l.clrtoeol(package_window)
       local outstr = tagformat:format(tuple.tag)
-      if tuple.shortdescr then
-	 outstr = outstr..' - '..tuple.shortdescr
-      end
       l.attron(package_window, colors[tuple.state])
       l.addstr(package_window, state_signs[tuple.state])
       l.attroff(package_window, colors[tuple.state])
@@ -117,9 +115,18 @@ function edit_tagset(tagset)
 	 l.addch(package_window, b.diamond)
 	 l.attroff(package_window, colors[tuple.old_state])
       end
+      local outmax=cols-4
+      if installation and not installed[tuple.tag] then
+	 outstr = outstr:sub(1,#outstr-1)
+	 l.attron(package_window, colors.missing)
+	 l.addstr(package_window, '*')
+	 l.attroff(package_window, colors.missing)
+      end
+      if tuple.shortdescr then
+	 outstr = outstr..' - '..tuple.shortdescr
+      end
       if selected then
 	 l.attron(package_window, colors.highlight)
-	 local outmax=cols-4
 	 l.addnstr(package_window, outstr, outmax)
 	 l.attroff(package_window, colors.highlight)
 	 l.move(1, 11)
@@ -144,14 +151,26 @@ function edit_tagset(tagset)
 	    if tuple.state ~= tuple.old_state then
 	       pkgdescr = pkgdescr..' was: '..tuple.old_state
 	    end
-	    l.addnstr(pkgdescr, cols - 4)
+	    if tuple.required and tuple.state ~= 'ADD' then
+	       l.attron(colors.required)
+	       l.addnstr(pkgdescr, outmax)
+	       l.attroff(colors.required)
+	    else
+	       l.addnstr(pkgdescr, outmax)
+	    end
 	 end
 	 l.move(1, 11)
 	 local descrs=tagset.category_description[tuple.category]
 	 l.addnstr(tuple.category ..
 		      (descrs and (' - '..descrs.short) or ''), cols - 10)
       else
-	 l.addnstr(package_window, outstr, cols-4)
+	 if tuple.required and tuple.state ~= 'ADD' then
+	    l.attron(package_window, colors.required)
+	    l.addnstr(package_window, outstr, outmax)
+	    l.attroff(package_window, colors.required)
+	 else
+	    l.addnstr(package_window, outstr, outmax)
+	 end
       end
    end
 
@@ -295,6 +314,7 @@ function edit_tagset(tagset)
    end
 
    local function change_state(tuple, new_state, line)
+      if #package_list < 1 then return end
       if not new_state then
 	 new_state = tuple.state == 'ADD' and 'SKP' or 'ADD'
       end
@@ -303,9 +323,41 @@ function edit_tagset(tagset)
 	 tagset.dirty = true
 	 draw_package(tuple, line, true)
 	 l.noutrefresh(package_window)
+	 show_constraint()
       end
    end
 
+   local function load_package(overwrite)
+      if #package_list > 0 then
+	 local tuple = package_list[package_cursor]
+	 l.endwin()
+	 local file = string.format('%s/%s-%s-%s-%s.txz',
+				    tuple.category,
+				    tuple.tag,
+				    tuple.version,
+				    tuple.arch,
+				    tuple.build)
+	 if tuple.arch == 'noarch' then
+	    print('Skipping NOARCH package '..file)
+	    util.usleep(5000000)
+	 else
+	    local filepath=tagset.directory..'/'..file
+	    if not tagset.package_cache or overwrite then
+	       print('Loading package '..file)
+	       tagset.packages_loaded = { [tuple] = true }
+	       tagset.package_cache = read_archive(filepath)
+	    else
+	       print('Loading additional package '..file)
+	       tagset.packages_loaded[tuple] = true
+	       tagset.package_cache:extend(filepath)
+	    end
+	    io.stdout:flush()
+	 end
+	 l.init_curses()
+	 repaint()
+      end
+   end
+   
    local function command_loop()
       repaint()
       -- If a timeout isn't given at first, then SIGINT isn't
@@ -314,9 +366,9 @@ function edit_tagset(tagset)
       while true do
 	 ::continue::
 	 l.doupdate()
-	 local key
-	 repeat key = l.getch() until key >= 0
-	 if key == k.resize then
+	 local key, suffix
+	 repeat key, suffix = l.getch() until key >= 0
+	 if key_name == k.resize then
 	    -- 1/5 sec
 	    l.timeout(200)
 	    repeat key = l.getch() until key ~= k.resize
@@ -327,7 +379,7 @@ function edit_tagset(tagset)
 	 end
 	 -- Regardless if ctrl/c is SIGINT, it quits the editor.
 	 if key == k.ctrl_c then break end
-	 local char = key < 256 and string.char(key) or 0
+	 local char = key < 128 and string.char(key) or l.keyname(key)
 	 if state == 'describe' then
 	    state = nil
 	    show_descr = nil
@@ -342,12 +394,14 @@ function edit_tagset(tagset)
 	    show_descr = package_list[package_cursor].description
 	    repaint()
 	 -- Constraint
-	 elseif key == k.escape then
+	 elseif key == k.escape and not suffix then
 	    clear_constraint()
 	    repaint()
 	 elseif key == k.ctrl_u then
-	    constrain('', current_constraint)
-	    repaint()
+	    if current_constraint then
+	       constrain('', current_constraint)
+	       repaint()
+	    end
 	 elseif key >= 32 and key < 127 and not excluded_char[char] then
 	    local new_constraint = current_constraint
 	    if not current_constraint then new_constraint = '' end
@@ -355,18 +409,18 @@ function edit_tagset(tagset)
 	       constrain(new_constraint..char, current_constraint)
 	       repaint()
 	    end
-	 elseif delete_keys[key] then
+	 elseif char == 'KEY_BACKSPACE' or key == k.delete then
 	    if current_constraint then
 	       constrain(current_constraint:sub(1, -2), current_constraint)
 	       repaint()
 	    end
 	 -- Navigation
-	 elseif key == k.right then
+	 elseif char == 'KEY_RIGHT' then
 	    if current_category < #categories_sorted then
 	       select_category(current_category+1)
 	       repaint()
 	    end
-	 elseif key == k.left then
+	 elseif char == 'KEY_LEFT' then
 	    if current_category > 1 then
 	       select_category(current_category-1)
 	       repaint()
@@ -377,13 +431,13 @@ function edit_tagset(tagset)
 	 elseif char == '>' then
 	    select_category(#categories_sorted)
 	    repaint()
-	 elseif key == k.home then
+	 elseif char == 'KEY_HOME' then
 	    package_cursor = 1
 	    repaint()
-	 elseif key == k['end'] then
+	 elseif char == 'KEY_END' then
 	    package_cursor = #package_list
 	    repaint()
-	 elseif key == k.down then
+	 elseif char == 'KEY_DOWN' then
 	    if package_cursor < #package_list then
 	       package_cursor = package_cursor+1
 	       if package_cursor == viewport_top + subwin_lines then
@@ -397,8 +451,8 @@ function edit_tagset(tagset)
 		  l.noutrefresh(package_window)
 	       end
 	    end
-	 elseif key == k.up then
-	    if package_cursor > 1 then
+	 elseif char == 'KEY_UP' then
+	    if #package_list > 0 and package_cursor > 1 then
 	       package_cursor = package_cursor - 1
 	       if package_cursor < viewport_top then
 		  repaint()
@@ -411,15 +465,15 @@ function edit_tagset(tagset)
 		  l.noutrefresh(package_window)
 	       end
 	    end
-	 elseif key == k.page_down then
-	    if package_cursor < #package_list then
+	 elseif char == 'KEY_NPAGE' then
+	    if #package_list > 0 and package_cursor < #package_list then
 	       package_cursor = package_cursor + half_subwin
 	       if package_cursor > #package_list then
 		  package_cursor = #package_list
 	       end
 	       repaint()
 	    end
-	 elseif key == k.page_up then
+	 elseif char == 'KEY_PPAGE' then
 	    if package_cursor > 1 then
 	       package_cursor = package_cursor - half_subwin
 	       if package_cursor < 1 then
@@ -428,10 +482,10 @@ function edit_tagset(tagset)
 	       repaint()
 	    end
 	 -- Change package state
-	 elseif key == k.ctrl_a then
+	 elseif key == k.ctrl_a or char == 'KEY_IC' then
 	    change_state(package_list[package_cursor], 'ADD',
 			 package_cursor-viewport_top)
-	 elseif key == k.ctrl_s then
+	 elseif key == k.ctrl_s or char == 'KEY_DC' then
 	    change_state(package_list[package_cursor], 'SKP',
 			 package_cursor-viewport_top)
 	 elseif key == k.ctrl_o then
@@ -440,13 +494,21 @@ function edit_tagset(tagset)
 	 elseif key == k.ctrl_r  then
 	    change_state(package_list[package_cursor], 'REC',
 			 package_cursor-viewport_top)
-	 elseif key == k.ctrl_u  then
+	 elseif key == k.ctrl_x  then
 	    change_state(package_list[package_cursor],
 			 package_list[package_cursor].old_state,
 			 package_cursor-viewport_top)
 	 elseif char == ' ' then
 	    change_state(package_list[package_cursor], nil,
 			 package_cursor-viewport_top)
+	 -- Archive loading and library resolution
+	 elseif char == 'M-l' or (key == k.escape and suffix == 'l') then
+	    load_package()
+	 elseif char == 'M-L' or (key == k.escape and suffix == 'L') then
+	    load_package(true)
+	 elseif char == 'M-x' or (key == k.escape and suffix == 'x') then
+	    tagset.package_cache = nil
+	    tagset.packages_loaded = nil
 	 end
       end
    end
@@ -468,6 +530,8 @@ function edit_tagset(tagset)
    colors.REC = 0
    colors.pattern = colors.highlight
    colors.nomatch = colors.SKP
+   colors.required = colors.SKP
+   colors.missing = colors.SKP
    colors.main= bit.bor(l.color_pair(1), a.bold)
    l.bkgd(colors.main)
    l.attron(colors.main)
