@@ -1,4 +1,4 @@
--- [[
+--[[
 function opendebug(ptsnum)
    if debugout then debugout:close() end
    debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
@@ -15,7 +15,7 @@ function debug(...)
    debugout:write '\r\n'
 end
 
-opendebug(2)
+opendebug(FOO)
 --]]
 
 local function make_char_bool(str)
@@ -29,7 +29,15 @@ local a = l.attributes
 local b = l.boxes
 local k = l.keys
 local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
-local excluded_char = make_char_bool '<>/ '
+local excluded_char = make_char_bool '[]<>/ '
+local escapemap = {
+   a='M-a', o='M-o', r='M-r', R='M-R', s='M-s',
+   l='M-l', L='M-L', x='M-x'
+}
+constrain_state_commands={
+   ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
+   ['M-R']='REQ'
+}
 
 local function assert(bool, ...)
    if not bool then l.endwin() end
@@ -77,15 +85,50 @@ function edit_tagset(tagset, installation)
    local viewport_top
    local state
    local current_constraint
+   local constraint_flags = {}
+   local constraint_flags_set = 0
+   local only_required = false
    local descr_window
    local package_window
    local rows, cols, subwin_lines, half_subwin
    local installed = installation and installation.tags or {}
 
+   local get_constraint_flag_string
+   do
+      local constraint_flag_string = ''
+      local last_flag_count = 0
+      local last_required = false
+      get_constraint_flag_string = function ()
+	 if last_flag_count ~= constraint_flags_set
+	 or last_required ~= only_required then
+	    if constraint_flags_set > 0 or only_required then
+	       local newcfs = ' ['
+	       for _,flag in ipairs { 'ADD', 'OPT', 'REC', 'SKP' } do
+		  if constraint_flags[flag] then
+		     newcfs = newcfs..
+			({ADD='a',OPT='o',REC='r',SKP='s'})[flag]
+		  end
+	       end
+	       if only_required then
+		  constraint_flag_string = newcfs..'R]'
+	       else
+		  constraint_flag_string = newcfs..']'
+	       end
+	    else
+	       constraint_flag_string = ''
+	    end
+	    last_flag_count = constraint_flags_set
+	    last_required = only_required
+	 end
+	 return constraint_flag_string
+      end
+   end
+   
    local function show_constraint()
       if current_constraint then
-	 local constraint = #current_constraint > 0 and
-	    current_constraint or '* EMPTY *'
+	 local constraint = (#current_constraint > 0 and
+				current_constraint or '* EMPTY *')..
+	    get_constraint_flag_string()
 	 l.move(rows-2, cols - #constraint-2)
 	 local color
 	 if #package_list == 0 then
@@ -247,7 +290,6 @@ function edit_tagset(tagset, installation)
    end
 
    -- Constraint stuff
-   -- TODO
    local function clear_constraint()
       if current_constraint then
 	 assert(last_package, "last_package not assigned")
@@ -262,7 +304,14 @@ function edit_tagset(tagset, installation)
       end
    end
 
-   -- 
+   local function match_constraint(tuple, constraint)
+      if only_required and not tuple.required
+      or constraint_flags_set > 0 and not constraint_flags[tuple.state] then
+	 return
+      end
+      return tuple.tag:find(constraint)
+   end
+   
    local function constrain(constraint, old_constraint)
       assert(last_package, "last_package not assigned")
       if not old_constraint then
@@ -279,7 +328,7 @@ function edit_tagset(tagset, installation)
 	 for _, category in ipairs(categories_sorted) do
 	    local cat = tagset.categories[category]
 	    for _, tuple in ipairs(cat) do
-	       if tuple.tag:find(constraint) then
+	       if  match_constraint(tuple,constraint) then
 		  table.insert(package_list, tuple)
 		  if tuple == last_package then
 		     new_cursor = insert_number
@@ -296,6 +345,22 @@ function edit_tagset(tagset, installation)
 	 end
 	 package_cursor = new_cursor
       end
+   end
+
+   local function toggle_constrain_by_state(flag)
+      if flag == 'REQ' then
+	 only_required = not only_required
+      else
+	 local old_flag = constraint_flags[flag]
+	 if old_flag then
+	    constraint_flags[flag] = false
+	    constraint_flags_set = constraint_flags_set - 1
+	 else
+	    constraint_flags[flag] = true
+	    constraint_flags_set = constraint_flags_set + 1
+	 end
+      end
+      constrain(current_constraint or '', current_constraint)
    end
 
    local function select_category(new_category)
@@ -386,7 +451,14 @@ function edit_tagset(tagset, installation)
 	    repaint()
 	    goto continue
 	 end
+	 if key == k.escape and escapemap[suffix] then
+	    key = -1
+	    char = escapemap[suffix]
+	 end
 	 if key == k.ctrl_l then
+	    if current_constraint then
+	       constrain(current_constraint, current_constraint)
+	    end
 	    repaint()
 	 -- Show description
 	 elseif key == k.ctrl_d then
@@ -397,6 +469,10 @@ function edit_tagset(tagset, installation)
 	 elseif key == k.escape and not suffix then
 	    clear_constraint()
 	    repaint()
+	 elseif constrain_state_commands[char] then
+	    toggle_constrain_by_state(constrain_state_commands[char],
+				      has_constraint)
+	    repaint()
 	 elseif key == k.ctrl_u then
 	    if current_constraint then
 	       constrain('', current_constraint)
@@ -404,7 +480,13 @@ function edit_tagset(tagset, installation)
 	    end
 	 elseif key >= 32 and key < 127 and not excluded_char[char] then
 	    local new_constraint = current_constraint
-	    if not current_constraint then new_constraint = '' end
+	    if not current_constraint then
+	       only_required = false
+	       constraint_flags_set = 0
+	       constraint_flags = {}
+	       new_constraint = ''
+	       constraint_state = { }
+	    end
 	    if #new_constraint < 16 then
 	       constrain(new_constraint..char, current_constraint)
 	       repaint()
@@ -502,11 +584,11 @@ function edit_tagset(tagset, installation)
 	    change_state(package_list[package_cursor], nil,
 			 package_cursor-viewport_top)
 	 -- Archive loading and library resolution
-	 elseif char == 'M-l' or (key == k.escape and suffix == 'l') then
+	 elseif char == 'M-l' then
 	    load_package()
-	 elseif char == 'M-L' or (key == k.escape and suffix == 'L') then
+	 elseif char == 'M-L' then
 	    load_package(true)
-	 elseif char == 'M-x' or (key == k.escape and suffix == 'x') then
+	 elseif char == 'M-x' then
 	    tagset.package_cache = nil
 	    tagset.packages_loaded = nil
 	 end
