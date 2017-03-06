@@ -435,8 +435,7 @@ function read_tagset(tagset_directory, skip_kde)
 	    if (descr_file) then
 	       descr_lines = {}
 	       for line in descr_file:lines() do
-		  line = line:match '^[^:]*:( .*)$'
-		  table.insert(descr_lines, line)
+		  table.insert(descr_lines, line:match '^[^:]*: ?(.*)$')
 	       end
 	       descr_file:close()
 	       while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
