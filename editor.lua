@@ -1,4 +1,4 @@
---[[
+-- [[
 function opendebug(ptsnum)
    if debugout then debugout:close() end
    debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
@@ -8,14 +8,14 @@ end
 
 function debug(...)
    if not debugout then return end
-   for i,val in ipairs {...} do
+   for i=1,select('#', ...) do
       if i > 1 then debugout:write '\t' end
-      debugout:write(tostring(val))
+      debugout:write(tostring(select(i, ...)))
    end
    debugout:write '\r\n'
 end
 
-opendebug(FOO)
+opendebug(3)
 --]]
 
 local function make_char_bool(str)
@@ -32,7 +32,8 @@ local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
 local excluded_char = make_char_bool '[]<>/ '
 local escapemap = {
    a='M-a', o='M-o', r='M-r', R='M-R', s='M-s',
-   l='M-l', L='M-L', x='M-x'
+   l='M-l', L='M-L', x='M-x',
+   d='M-d'
 }
 constrain_state_commands={
    ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
@@ -90,8 +91,76 @@ function edit_tagset(tagset, installation)
    local only_required = false
    local descr_window
    local package_window
+   local special_window
    local rows, cols, subwin_lines, half_subwin
    local installed = installation and installation.tags or {}
+
+   local function open_special()
+      if not special_window then
+	 special_window = l.newwin(subwin_lines, cols-2, 3, 1)
+	 l.bkgd(special_window, colors.special)
+	 l.move(special_window, 0, 0)
+      end
+   end
+
+   local function close_special()
+      if special_window then
+	 l.delwin(special_window)
+	 special_window = nil
+      end
+   end
+
+   local function print_special_line(...)
+      local lineout = ''
+      for i=1,select('#', ...) do
+	 if i > 1 then
+	    lineout = lineout..('        '):sub(1 + #lineout % 8)
+	 end
+	 lineout = lineout..tostring(select(i, ...))
+      end
+      local row, _ = l.getyx(special_window)
+      l.move(special_window, row, 0)
+      l.clrtoeol(special_window)
+      l.addnstr(special_window, lineout, cols-2)
+      l.noutrefresh(special_window)
+      return row
+   end
+
+   local function next_line_special(row)
+      if row == subwin_lines - 1 then
+	 l.move(special_window, 0, 0)
+	 l.insdelln(special_window, -1)
+	 l.move(special_window, subwin_lines - 1, 0)
+      else
+	 l.move(special_window, row + 1, 0)
+      end
+      l.noutrefresh(special_window)
+      l.doupdate()
+   end
+
+   local function print_special(...)
+      open_special()
+      local row = print_special_line(...)
+      next_line_special(row)
+   end
+
+   local function confirm_special(prompt, pattern, default)
+      local char
+      open_special()
+      repeat
+	 local row, col = print_special_line(prompt)
+	 l.noutrefresh(special_window)
+	 l.doupdate()
+	 key = l.getch()
+	 char = key >= 0 and key < 128 and string.char(key) or ''
+	 local row, _ = l.getyx(special_window)
+	 if key > 32 and key < 127 and #prompt < cols-3 then
+	    l.addstr(special_window, char)
+	 end
+	 next_line_special(row)
+      until not pattern or char:match(pattern)
+      return char == '\n' and default or char
+   end
 
    local get_constraint_flag_string
    do
@@ -395,7 +464,6 @@ function edit_tagset(tagset, installation)
    local function load_package(overwrite)
       if #package_list > 0 then
 	 local tuple = package_list[package_cursor]
-	 l.endwin()
 	 local file = string.format('%s/%s-%s-%s-%s.txz',
 				    tuple.category,
 				    tuple.tag,
@@ -403,22 +471,23 @@ function edit_tagset(tagset, installation)
 				    tuple.arch,
 				    tuple.build)
 	 if tuple.arch == 'noarch' then
-	    print('Skipping NOARCH package '..file)
-	    util.usleep(5000000)
+	    print_special('Skipping NOARCH package '..file)
+	    util.usleep(2000000)
 	 else
 	    local filepath=tagset.directory..'/'..file
 	    if not tagset.package_cache or overwrite then
-	       print('Loading package '..file)
+	       print_special('Loading package '..file)
 	       tagset.packages_loaded = { [tuple] = true }
-	       tagset.package_cache = read_archive(filepath)
+	       tagset.package_cache =
+		  read_archive(filepath, print_special, confirm_special)
 	    else
-	       print('Loading additional package '..file)
+	       print_special('Loading additional package '..file)
 	       tagset.packages_loaded[tuple] = true
-	       tagset.package_cache:extend(filepath)
+	       tagset.package_cache:extend(filepath, print_special,
+					   confirm_special)
 	    end
-	    io.stdout:flush()
 	 end
-	 l.init_curses()
+	 close_special()
 	 repaint()
       end
    end
@@ -462,9 +531,22 @@ function edit_tagset(tagset, installation)
 	    repaint()
 	 -- Show description
 	 elseif key == k.ctrl_d then
-	    state = 'describe'
-	    show_descr = package_list[package_cursor].description
-	    repaint()
+	    if #package_list > 0 then
+	       state = 'describe'
+	       show_descr = package_list[package_cursor].description
+	       repaint()
+	    end
+	 elseif char == 'M-d' then
+	    -- Does the installation description ever change between releases?
+	    if #package_list > 0 and installation then
+	       local entry =
+		  installation.tags[package_list[package_cursor].tag]
+	       if entry then
+		  state = 'describe'
+		  show_descr = entry.description
+		  repaint()
+	       end
+	    end
 	 -- Constraint
 	 elseif key == k.escape and not suffix then
 	    clear_constraint()
@@ -604,6 +686,7 @@ function edit_tagset(tagset, installation)
    l.init_pair(4, a.red, a.blue)
    l.init_pair(5, a.yellow, a.blue)
    l.init_pair(6, a.yellow, a.black)
+   l.init_pair(7, a.green, a.black)
    colors.highlight = bit.bor(l.color_pair(2), a.bold)
    colors.description = bit.bor(l.color_pair(6), a.bold)
    colors.ADD = bit.bor(l.color_pair(3), a.bold)
@@ -614,7 +697,8 @@ function edit_tagset(tagset, installation)
    colors.nomatch = colors.SKP
    colors.required = colors.SKP
    colors.missing = colors.SKP
-   colors.main= bit.bor(l.color_pair(1), a.bold)
+   colors.main = bit.bor(l.color_pair(1), a.bold)
+   colors.special = bit.bor(l.color_pair(7), a.bold)
    l.bkgd(colors.main)
    l.attron(colors.main)
    l.refresh()
