@@ -1,4 +1,4 @@
--- [[
+--[[
 function opendebug(ptsnum)
    if debugout then debugout:close() end
    debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
@@ -15,7 +15,7 @@ function debug(...)
    debugout:write '\r\n'
 end
 
-opendebug(3)
+opendebug(2)
 --]]
 
 local function make_char_bool(str)
@@ -145,13 +145,20 @@ function edit_tagset(tagset, installation)
    end
 
    local function confirm_special(prompt, pattern, default)
-      local char
+      local char, key, _
       open_special()
       repeat
 	 local row, col = print_special_line(prompt)
 	 l.noutrefresh(special_window)
 	 l.doupdate()
-	 key = l.getch()
+	 repeat
+	    key, _ = l.getch()
+	    if key >= 0 then break end
+	 until false
+	 if key == k.resize then
+	    next_line_special(row)
+	    return default or ''
+	 end
 	 char = key >= 0 and key < 128 and string.char(key) or ''
 	 local row, _ = l.getyx(special_window)
 	 if key > 32 and key < 127 and #prompt < cols-3 then
@@ -501,8 +508,11 @@ function edit_tagset(tagset, installation)
 	 ::continue::
 	 l.doupdate()
 	 local key, suffix
-	 repeat key, suffix = l.getch() until key >= 0
-	 if key_name == k.resize then
+	 repeat
+	    key, suffix = l.getch()
+	    if key >= 0 then break end
+	 until false
+	 if key == k.resize then
 	    -- 1/5 sec
 	    l.timeout(200)
 	    repeat key = l.getch() until key ~= k.resize
