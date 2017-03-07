@@ -66,7 +66,7 @@ end
 -- TEMPORARY GLOBAL FOR TESTING.
 rmtd = rm_tmpdir
 
-function read_archive(archive_file)
+function read_archive(archive_file, myprint, mygetch)
    function satisfy(self, root)
       local root = root or ''
       local paths, seen = {}, {}
@@ -137,7 +137,9 @@ function read_archive(archive_file)
       return new
    end
 
-   local function extend(self, archive_file)
+   local function extend(self, archive_file, myprint, mygetch)
+      local print = myprint or print
+      local getch = mygetch or getch
       local std_search = {
 	 ['/lib']=true, ['/lib64']=true,
 	 ['/usr/lib']=true, ['/usr/lib64']=true
@@ -221,7 +223,7 @@ function read_archive(archive_file)
    end
 
    local new = create()
-   if archive_file then extend(new, archive_file) end
+   if archive_file then extend(new, archive_file, myprint, myprint) end
    return new
 end
 
