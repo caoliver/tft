@@ -221,6 +221,15 @@ LUAFN(mvwin)
     return 0;
 }
 
+LUAFN(resize)
+{
+    WINDOW *w;
+    int i = which_window(L, &w);
+
+    wresize(w, luaL_checkinteger(L, 1 + i), luaL_checkinteger(L, 2 + i));
+    return 0;
+}
+
 
 LUAFN(start_color)
 {
@@ -414,6 +423,7 @@ LUALIB_API int luaopen_ljcurses(lua_State *L)
 	
 	FN_ENTRY(newwin),
 	FN_ENTRY(delwin),
+	FN_ENTRY(resize),
 	FN_ENTRY(setwin),
 	FN_ENTRY(getdims),
 	FN_ENTRY(getyx),
