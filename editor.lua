@@ -84,7 +84,6 @@ function edit_tagset(tagset, installation)
    local tagformat = '%-'..maxtaglen..'s'
    local colors = {}
    local viewport_top
-   local state
    local current_constraint
    local constraint_flags = {}
    local constraint_flags_set = 0
@@ -354,13 +353,18 @@ function edit_tagset(tagset, installation)
 	 l.delwin(package_window)
 	 package_window = nil
       end
-      redraw_package_list()
       if descr_window then
 	 l.delwin(descr_window)
 	 descr_window = nil
       end
       if show_descr then
 	 draw_description()
+      elseif special_window then
+	 l.resize(special_window, subwin_lines, cols-2)
+	 l.redrawwin(special_window)
+	 l.refresh(special_window)
+      else
+	 redraw_package_list()
       end
       -- What else do we need to redraw here?
    end
@@ -470,6 +474,8 @@ function edit_tagset(tagset, installation)
 
    local function load_package(overwrite)
       if #package_list > 0 then
+	 local conflicts
+	 local now = util.realtime()
 	 local tuple = package_list[package_cursor]
 	 local file = string.format('%s/%s-%s-%s-%s.txz',
 				    tuple.category,
@@ -479,7 +485,6 @@ function edit_tagset(tagset, installation)
 				    tuple.build)
 	 if tuple.arch == 'noarch' then
 	    print_special('Skipping NOARCH package '..file)
-	    util.usleep(2000000)
 	 else
 	    local filepath=tagset.directory..'/'..file
 	    if not tagset.package_cache or overwrite then
@@ -490,12 +495,19 @@ function edit_tagset(tagset, installation)
 	    else
 	       print_special('Loading additional package '..file)
 	       tagset.packages_loaded[tuple] = true
-	       tagset.package_cache:extend(filepath, print_special,
-					   confirm_special)
+	       conflicts = tagset.package_cache:extend(filepath, print_special,
+						       confirm_special)
 	    end
 	 end
-	 close_special()
-	 repaint()
+	 if conflicts then
+	    print_special ''
+	    print_special 'Hit any key to continue'
+	 else
+	    local elapsed = util.realtime() - now
+	    if elapsed < 1 then util.usleep(1000000 * (1 - elapsed)) end
+	    close_special()
+	    repaint()
+	 end
       end
    end
    
@@ -524,9 +536,13 @@ function edit_tagset(tagset, installation)
 	 -- Regardless if ctrl/c is SIGINT, it quits the editor.
 	 if key == k.ctrl_c then break end
 	 local char = key < 128 and string.char(key) or l.keyname(key)
-	 if state == 'describe' then
-	    state = nil
+	 if show_descr then
 	    show_descr = nil
+	    repaint()
+	    goto continue
+	 end
+	 if special_window then
+	    close_special()
 	    repaint()
 	    goto continue
 	 end
@@ -542,7 +558,6 @@ function edit_tagset(tagset, installation)
 	 -- Show description
 	 elseif key == k.ctrl_d then
 	    if #package_list > 0 then
-	       state = 'describe'
 	       show_descr = package_list[package_cursor].description
 	       repaint()
 	    end
@@ -552,7 +567,6 @@ function edit_tagset(tagset, installation)
 	       local entry =
 		  installation.tags[package_list[package_cursor].tag]
 	       if entry then
-		  state = 'describe'
 		  show_descr = entry.description
 		  repaint()
 	       end
