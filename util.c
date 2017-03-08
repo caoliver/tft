@@ -36,6 +36,16 @@ LUAFN(cputime)
     return 1;
 }
 
+LUAFN(realtime)
+{
+    struct timespec result;
+
+    clock_gettime(CLOCK_REALTIME, &result);
+
+    lua_pushnumber(L, (double)result.tv_sec + 1E-9 * (double)result.tv_nsec);
+    return 1;
+}
+
 LUAFN(usleep)
 {
     usleep(luaL_checkinteger(L, 1));
@@ -71,6 +81,7 @@ LUALIB_API int luaopen_util(lua_State *L)
 {
     static const luaL_Reg funcptrs[] = {
 //	FN_ENTRY(catch_signals),
+	FN_ENTRY(realtime),
 	FN_ENTRY(cputime),
 	FN_ENTRY(usleep),
 	FN_ENTRY(xxhsum_file),
