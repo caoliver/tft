@@ -160,6 +160,7 @@ function read_archive(archive_file, myprint, mygetch)
       local needed = self.needed
       local elfpaths = self.elfpaths
       local tmpdir, len = make_tmpdir()
+      local conflicts
 
       local inodes_read = {}
       os.execute('ROOT=$(readlink -f '..tmpdir..') installpkg 2>&- 1>&-'..
@@ -178,6 +179,7 @@ function read_archive(archive_file, myprint, mygetch)
 	    if elfpaths[elf.path] then
 	       print('Potential conflict for '..elf.path..' in '..elf.package)
 	       print('Exists already as '..elfpaths[elf.path])
+	       conflicts = true
 	    end
 	    elfpaths[elf.path] = name
 	    table.insert(elfs, elf)
@@ -213,6 +215,7 @@ function read_archive(archive_file, myprint, mygetch)
       end
       for _, found in pairs(found) do needed[found] = nil end
       self.archivesums[archivesum] = true
+      return conflicts
    end
 
    create = function()
