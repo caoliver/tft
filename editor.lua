@@ -15,7 +15,7 @@ function debug(...)
    debugout:write '\r\n'
 end
 
-opendebug(2)
+opendebug(FOO)
 --]]
 
 local function make_char_bool(str)
@@ -150,10 +150,11 @@ function edit_tagset(tagset, installation)
 	 local row, col = print_special_line(prompt)
 	 l.noutrefresh(special_window)
 	 l.doupdate()
-	 repeat
-	    key, _ = l.getch()
+	 while true do
+	    key = l.getch()
 	    if key >= 0 then break end
-	 until false
+	    util.usleep(1000)
+	 end
 	 if key == k.resize then
 	    next_line_special(row)
 	    return default or ''
@@ -204,7 +205,7 @@ function edit_tagset(tagset, installation)
 	 local constraint = (#current_constraint > 0 and
 				current_constraint or '* EMPTY *')..
 	    get_constraint_flag_string()
-	 l.move(rows-2, cols - #constraint-2)
+	 l.move(subwin_lines+4, cols - #constraint-2)
 	 local color
 	 if #package_list == 0 then
 	    color = colors.nomatch
@@ -253,28 +254,60 @@ function edit_tagset(tagset, installation)
 	 l.addch(b.vline)
 	 l.move(1, cols-12)
 	 l.addnstr('  '..package_cursor..'/'..#package_list, 13)
-	 l.move(rows-2,2)
+	 l.move(subwin_lines+4, 2)
 	 l.clrtoeol()
-	 l.move(rows-2, cols-1)
+	 l.move(subwin_lines+4, cols-1)
 	 l.addch(b.vline)
-	 l.move(rows-2,2)
+	 l.move(subwin_lines+4,2)
+	 local pkgdescr
 	 if tuple.version then
-	    local pkgdescr =
+	    pkgdescr =
 	       string.format('%s-%s-%s-%s  state: %s',
 			     tuple.tag,
 			     tuple.version,
 			     tuple.arch,
 			     tuple.build,
 			     tuple.state)
-	    if tuple.state ~= tuple.old_state then
-	       pkgdescr = pkgdescr..' was: '..tuple.old_state
-	    end
-	    if tuple.required and tuple.state ~= 'ADD' then
-	       l.attron(colors.required)
-	       l.addnstr(pkgdescr, outmax)
-	       l.attroff(colors.required)
-	    else
-	       l.addnstr(pkgdescr, outmax)
+	 else
+	    pkgdescr =
+	       string.format('%s  state: %s',
+			     tuple.tag,
+			     tuple.state)
+	 end
+	 if tuple.state ~= tuple.old_state then
+	    pkgdescr = pkgdescr..' was: '..tuple.old_state
+	 end
+	 if tuple.required and tuple.state ~= 'ADD' then
+	    l.attron(colors.required)
+	    l.addnstr(pkgdescr, outmax)
+	    l.attroff(colors.required)
+	 else
+	    l.addnstr(pkgdescr, outmax)
+	 end
+	 if installation then
+	    l.move(subwin_lines+5,2)
+	    l.clrtoeol()
+	    l.move(subwin_lines+5,cols-1)
+	    l.addch(b.vline)
+	    l.move(subwin_lines+5,2)
+	    local installed = installed[tuple.tag]
+	    if installed then
+	       local instdescr =
+		  string.format('Installed %s-%s-%s-%s',
+				installed.tag,
+				installed.version,
+				installed.arch,
+				installed.build)
+	       if tuple.version ~= installed.version
+		  or tuple.arch ~= installed.arch
+		  or tuple.build ~= installed.build
+	       then
+		  l.addnstr(instdescr, outmax)
+	       else
+		  l.attron(colors.same_version)
+		  l.addnstr(instdescr, outmax)
+		  l.attroff(colors.same_version)
+	       end
 	    end
 	 end
 	 l.move(1, 11)
@@ -331,7 +364,7 @@ function edit_tagset(tagset, installation)
    
    local function repaint()
       _,_,rows,cols = l.getdims()
-      subwin_lines = rows - 6
+      subwin_lines = rows - (installation and 7 or 6)
       half_subwin = math.floor(subwin_lines/2)
       l.move(0,0)
       l.clrtobot()
@@ -343,10 +376,10 @@ function edit_tagset(tagset, installation)
       l.addch(b.rtee)
       l.move(1,1)
       l.addstr('Category:')
-      l.move(rows-3,0)
+      l.move(subwin_lines + 3, 0)
       l.addch(b.ltee)
       l.hline(b.hline, cols-2)
-      l.move(rows-3,cols-1)
+      l.move(subwin_lines + 3, cols-1)
       l.addch(b.rtee)
       l.noutrefresh()
       if package_window then
@@ -520,10 +553,11 @@ function edit_tagset(tagset, installation)
 	 ::continue::
 	 l.doupdate()
 	 local key, suffix
-	 repeat
+	 while true do
 	    key, suffix = l.getch()
 	    if key >= 0 then break end
-	 until false
+	    util.usleep(1000)
+	 end
 	 if key == k.resize then
 	    -- 1/5 sec
 	    l.timeout(200)
@@ -720,6 +754,7 @@ function edit_tagset(tagset, installation)
    colors.pattern = colors.highlight
    colors.nomatch = colors.SKP
    colors.required = colors.SKP
+   colors.same_version = colors.ADD
    colors.missing = colors.SKP
    colors.main = bit.bor(l.color_pair(1), a.bold)
    colors.special = bit.bor(l.color_pair(7), a.bold)
@@ -734,5 +769,8 @@ function edit_tagset(tagset, installation)
       last_package = package_list[package_cursor]
    end
    tagset.last_package = last_package
+   if tagset.package_cache then
+      tagset.package_cache:cleanup()
+   end
    print 'Editor finished'
 end
