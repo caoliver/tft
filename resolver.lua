@@ -157,6 +157,7 @@ function read_archive(archive_file, myprint, mygetch)
       local needed = self.needed
       local elfpaths = self.elfpaths
       local tmpdir, len = make_tmpdir()
+      tmpdir=tmpdir..'/'
       local conflicts
 
       local inodes_read = {}
@@ -175,7 +176,11 @@ function read_archive(archive_file, myprint, mygetch)
 	       archive_file:match(decompose_archive_name)
 	    if elfpaths[elf.path] then
 	       print('Potential conflict for '..elf.path..' in '..elf.package)
-	       print('Exists already as '..elfpaths[elf.path])
+	       local path=elfpaths[elf.path]
+	       if tmpdir == path:sub(1,#tmpdir) then
+		  path="$WORKDIR/"..path:sub(#tmpdir+1)
+	       end
+	       print('Exists already as '..path)
 	       conflicts = true
 	    end
 	    elfpaths[elf.path] = name
