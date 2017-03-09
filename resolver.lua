@@ -63,9 +63,6 @@ function getch(prompt, pattern, default)
    return ch == '\n' and default or ch
 end
 
--- TEMPORARY GLOBAL FOR TESTING.
-rmtd = rm_tmpdir
-
 function read_archive(archive_file, myprint, mygetch)
    function satisfy(self, root)
       local root = root or ''
@@ -222,7 +219,8 @@ function read_archive(archive_file, myprint, mygetch)
       return {
 	 archivesums = {}, elfs = {}, sonames = {}, needed = {},
 	 elfpaths = {},
-	 clone = clone, satisfy = satisfy, extend = extend }
+	 clone = clone, satisfy = satisfy, extend = extend,
+	 cleanup=rm_tmpdir }
    end
 
    local new = create()
