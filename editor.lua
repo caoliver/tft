@@ -1,4 +1,4 @@
---[[
+-- [[
 function opendebug(ptsnum)
    if debugout then debugout:close() end
    debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
@@ -15,7 +15,7 @@ function debug(...)
    debugout:write '\r\n'
 end
 
-opendebug(FOO)
+opendebug(3)
 --]]
 
 local function make_char_bool(str)
@@ -35,9 +35,14 @@ local escapemap = {
    l='M-l', L='M-L', x='M-x',
    d='M-d'
 }
-constrain_state_commands={
+local constrain_state_commands={
    ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
    ['M-R']='REQ'
+}
+local scroll_keys={
+   KEY_HOME=true, KEY_END=true,
+   KEY_UP=true, KEY_DOWN=true,
+   KEY_NPAGE=true, KEY_PPAGE=true
 }
 
 local function assert(bool, ...)
@@ -88,85 +93,71 @@ function edit_tagset(tagset, installation)
    local constraint_flags = {}
    local constraint_flags_set = 0
    local only_required = false
-   local descr_window
    local package_window
+   local reportview_lines
+   local reportview_color
+   local reportview_head
+   local descr_window
    local special_window
    local rows, cols, subwin_lines, half_subwin
    local installed = installation and installation.tags or {}
 
-   local function open_special()
-      if not special_window then
-	 special_window = l.newwin(subwin_lines, cols-2, 3, 1)
-	 l.bkgd(special_window, colors.special)
-	 l.move(special_window, 0, 0)
-      end
+   local function activate_reportview(color)
+      reportview_lines = { '' }
+      reportview_color = color
+      reportview_head = 1
    end
 
-   local function close_special()
-      if special_window then
-	 l.delwin(special_window)
-	 special_window = nil
+   local function redraw_reportview()
+      if not reportview_window then
+	 reportview_window = l.newwin(subwin_lines, cols-2, 3, 1)
+	 l.bkgd(reportview_window, reportview_color)
       end
+      l.move(reportview_window, 0, 0)
+      l.clrtobot(reportview_window)
+      local cursor = reportview_head
+      for line = 0, subwin_lines-1 do
+	 if not reportview_lines[cursor] then break end
+	 l.move(reportview_window, line, 1)
+	 l.addnstr(reportview_window, reportview_lines[cursor], cols-4)
+	 cursor = cursor+1
+      end
+      l.noutrefresh(reportview_window)
    end
 
-   local function print_special_line(...)
-      local lineout = ''
-      for i=1,select('#', ...) do
-	 if i > 1 then
-	    lineout = lineout..('        '):sub(1 + #lineout % 8)
-	 end
-	 lineout = lineout..tostring(select(i, ...))
-      end
-      local row, _ = l.getyx(special_window)
-      l.move(special_window, row, 0)
-      l.clrtoeol(special_window)
-      l.addnstr(special_window, lineout, cols-2)
-      l.noutrefresh(special_window)
-      return row
+   local function deactivate_reportview()
+      reportview_lines = nil
    end
 
-   local function next_line_special(row)
-      if row == subwin_lines - 1 then
-	 l.move(special_window, 0, 0)
-	 l.insdelln(special_window, -1)
-	 l.move(special_window, subwin_lines - 1, 0)
+   local function add_to_reportview(text)
+      if text then
+	 reportview_lines[#reportview_lines] =
+	    reportview_lines[#reportview_lines]..text
       else
-	 l.move(special_window, row + 1, 0)
+	 table.insert(reportview_lines, '')
       end
-      l.noutrefresh(special_window)
-      l.doupdate()
-   end
-
-   local function print_special(...)
-      open_special()
-      local row = print_special_line(...)
-      next_line_special(row)
-   end
-
-   local function confirm_special(prompt, pattern, default)
-      local char, key, _
-      open_special()
-      repeat
-	 local row, col = print_special_line(prompt)
-	 l.noutrefresh(special_window)
-	 l.doupdate()
-	 while true do
-	    key = l.getch()
-	    if key >= 0 then break end
-	    util.usleep(1000)
-	 end
-	 if key == k.resize then
-	    next_line_special(row)
-	    return default or ''
-	 end
-	 char = key >= 0 and key < 128 and string.char(key) or ''
-	 local row, _ = l.getyx(special_window)
-	 if key > 32 and key < 127 and #prompt < cols-3 then
-	    l.addstr(special_window, char)
-	 end
-	 next_line_special(row)
-      until not pattern or char:match(pattern)
-      return char == '\n' and default or char
+      local minhead = #reportview_lines - subwin_lines + 1
+      if reportview_head >= minhead then
+	 local where = #reportview_lines - reportview_head
+	 l.move(reportview_window, where, 1)
+	 l.clrtoeol(reportview_window)
+	 l.addnstr(reportview_window, reportview_lines[#reportview_lines],
+		   cols-4)
+	 l.noutrefresh(reportview_window)
+      elseif minhead == reportview_head + 1 then
+	 reportview_head = minhead
+	 l.move(reportview_window, 0, 0)
+	 l.insdelln(reportview_window, -1)
+	 l.move(reportview_window, subwin_lines-1, 0)
+	 l.addnstr(reportview_window, reportview_lines[#reportview_lines],
+		   cols-4)
+	 l.noutrefresh(reportview_window)
+      else
+	 reportview_head = minhead
+	 l.move(reportview_window, 0, 0)
+	 l.clrtobot(reportview_window)
+	 redraw_reportview()
+      end
    end
 
    local get_constraint_flag_string
@@ -349,18 +340,13 @@ function edit_tagset(tagset, installation)
       l.noutrefresh(package_window)
    end
 
-   local function draw_description()
-      local descr_lines = show_descr and show_descr() or {}
-      if not descr_window then
-	 descr_window = l.newwin(subwin_lines, cols-2, 3, 1)
-	 l.bkgd(descr_window, colors.description)
+   local function show_description(description)
+      local descr_lines = description and description() or {}
+      activate_reportview(colors.description)
+      for i, line in ipairs(descr_lines) do
+	 if i > 1 then add_to_reportview() end
+	 add_to_reportview(line)
       end
-      for i = 1,subwin_lines do
-	 if i > #descr_lines then break end
-	 l.move(descr_window, i-1, 1)
-	 l.addnstr(descr_window, descr_lines[i], cols-4)
-      end
-      l.noutrefresh(descr_window)
    end
    
    local function repaint()
@@ -387,20 +373,15 @@ function edit_tagset(tagset, installation)
 	 l.delwin(package_window)
 	 package_window = nil
       end
-      if descr_window then
-	 l.delwin(descr_window)
-	 descr_window = nil
+      if reportview_window then
+	 l.delwin(reportview_window)
+	 reportview_window = nil
       end
-      if show_descr then
-	 draw_description()
-      elseif special_window then
-	 l.resize(special_window, subwin_lines, cols-2)
-	 l.redrawwin(special_window)
-	 l.refresh(special_window)
+      if reportview_lines then
+	 redraw_reportview()
       else
 	 redraw_package_list()
       end
-      -- What else do we need to redraw here?
    end
 
    -- Constraint stuff
@@ -507,7 +488,45 @@ function edit_tagset(tagset, installation)
    end
 
    local function load_package(overwrite)
+      local function print(...)
+	 local lineout = ''
+	 for i=1,select('#', ...) do
+	    if i > 1 then
+	       lineout = lineout..('        '):sub(1 + #lineout % 8)
+	    end
+	    lineout = lineout..tostring(select(i, ...))
+	 end
+	 add_to_reportview(lineout)
+	 add_to_reportview()
+      end
+
+      local function confirm(prompt, pattern, default)
+	 local char, key, _
+	 repeat
+	    local row, col = add_to_reportview(prompt)
+	    l.doupdate()
+	    while true do
+	       key = l.getch()
+	       if key >= 0 then break end
+	       util.usleep(1000)
+	    end
+	    if key == k.resize then
+	       add_to_reportview()
+	       return default or ''
+	    end
+	    char = key >= 0 and key < 128 and string.char(key) or ''
+	    if key > 32 and key < 127 and #prompt < cols-3 then
+	       add_to_reportview(char)
+	    end
+	    add_to_reportview()
+	 until not pattern or char:match(pattern)
+	 l.doupdate()
+	 return char == '\n' and default or char
+      end
+
       if #package_list > 0 then
+	 activate_reportview(colors.loading)
+	 repaint()
 	 local conflicts
 	 local now = util.realtime()
 	 local tuple = package_list[package_cursor]
@@ -518,28 +537,33 @@ function edit_tagset(tagset, installation)
 				    tuple.arch,
 				    tuple.build)
 	 if tuple.arch == 'noarch' then
-	    print_special('Skipping NOARCH package '..file)
+	    add_to_reportview('Skipping NOARCH package '..file)
+	    l.doupdate()
 	 else
 	    local filepath=tagset.directory..'/'..file
 	    if not tagset.package_cache or overwrite then
-	       print_special('Loading package '..file)
+	       add_to_reportview('Loading package '..file)	
+	       add_to_reportview()
+	       l.doupdate()
 	       tagset.packages_loaded = { [tuple] = true }
 	       tagset.package_cache =
-		  read_archive(filepath, print_special, confirm_special)
+		  read_archive(filepath, print, confirm)
 	    else
-	       print_special('Loading additional package '..file)
+	       add_to_reportview('Loading additional package '..file)
+	       add_to_reportview()
+	       l.doupdate()
 	       tagset.packages_loaded[tuple] = true
-	       conflicts = tagset.package_cache:extend(filepath, print_special,
-						       confirm_special)
+	       conflicts = tagset.package_cache:extend(filepath, print,
+						       confirm)
 	    end
 	 end
 	 if conflicts then
-	    print_special ''
-	    print_special 'Hit any key to continue'
+	    add_to_reportview ''
+	    add_to_reportview 'Hit any non-scroll key to continue'
 	 else
 	    local elapsed = util.realtime() - now
 	    if elapsed < 1 then util.usleep(1000000 * (1 - elapsed)) end
-	    close_special()
+	    deactivate_reportview()
 	    repaint()
 	 end
       end
@@ -571,29 +595,130 @@ function edit_tagset(tagset, installation)
 	 -- Regardless if ctrl/c is SIGINT, it quits the editor.
 	 if key == k.ctrl_c then break end
 	 local char = key < 128 and string.char(key) or l.keyname(key)
-	 if show_descr then
-	    show_descr = nil
-	    repaint()
-	    goto continue
-	 end
-	 if special_window then
-	    close_special()
-	    repaint()
-	    goto continue
-	 end
 	 if key == k.escape and escapemap[suffix] then
 	    key = -1
 	    char = escapemap[suffix]
 	 end
 	 if key == k.ctrl_l then
-	    if current_constraint then
-	       constrain(current_constraint, current_constraint)
+	    repaint()
+	    goto continue
+	 end
+	 if not scroll_keys[char] and reportview_lines then
+	    deactivate_reportview()
+	    repaint()
+	    goto continue
+	 end
+	 -- Navigation
+	 if char == 'KEY_RIGHT' then
+	    if current_category < #categories_sorted then
+	       select_category(current_category+1)
+	       repaint()
+	    end
+	 elseif char == 'KEY_LEFT' then
+	    if current_category > 1 then
+	       select_category(current_category-1)
+	       repaint()
+	    end
+	 elseif char == '<' then
+	    select_category(1)
+	    repaint()
+	 elseif char == '>' then
+	    select_category(#categories_sorted)
+	    repaint()
+	 elseif char == 'KEY_HOME' then
+	    if reportview_lines then
+	       reportview_head = 1
+	    else
+	       package_cursor = 1
 	    end
 	    repaint()
+	 elseif char == 'KEY_END' then
+	    if not reportview_lines then
+	       package_cursor = #package_list
+	    elseif #reportview_lines >= subwin_lines then
+	       reportview_head = #reportview_lines - subwin_lines + 1
+	    end
+	    repaint()
+	 elseif char == 'KEY_DOWN' then
+	    if reportview_lines then
+	       if reportview_head <= #reportview_lines - subwin_lines then
+		  l.move(reportview_window, 0, 0)
+		  l.insdelln(reportview_window, -1)
+		  l.move(reportview_window, subwin_lines - 1, 1)
+		  reportview_head = reportview_head + 1
+		  l.addnstr(reportview_window,
+			    reportview_lines[reportview_head+subwin_lines-1],
+			    cols-4)
+		  l.noutrefresh(reportview_window)
+	       end
+
+	    elseif package_cursor < #package_list then
+	       package_cursor = package_cursor+1
+	       if package_cursor == viewport_top + subwin_lines then
+		  repaint()
+	       else
+		  draw_package(package_list[package_cursor-1],
+			       package_cursor-viewport_top-1, false)
+		  draw_package(package_list[package_cursor],
+			       package_cursor-viewport_top, true)
+		  show_constraint()
+		  l.noutrefresh(package_window)
+	       end
+	    end
+	 elseif char == 'KEY_UP' then
+	    if reportview_lines then
+	       if reportview_head > 1 then
+		  l.move(reportview_window, 0, 1)
+		  l.insdelln(reportview_window, 1)
+		  reportview_head = reportview_head - 1
+		  l.addnstr(reportview_window,
+			    reportview_lines[reportview_head],
+			    cols-4)
+		  l.noutrefresh(reportview_window)
+	       end
+	    elseif #package_list > 0 and package_cursor > 1 then
+	       package_cursor = package_cursor - 1
+	       if package_cursor < viewport_top then
+		  repaint()
+	       else
+		  draw_package(package_list[package_cursor+1],
+			       package_cursor-viewport_top+1, false)
+		  draw_package(package_list[package_cursor],
+			       package_cursor-viewport_top, true)
+		  show_constraint()
+		  l.noutrefresh(package_window)
+	       end
+	    end
+	 elseif char == 'KEY_NPAGE' then
+	    if reportview_lines then
+	       local maxhead = #reportview_lines - subwin_lines + 1
+	       if maxhead < 1 then maxhead = 1 end
+	       reportview_head = reportview_head + half_subwin
+	       if reportview_head > maxhead then reportview_head = maxhead end
+	       redraw_reportview()
+	    elseif #package_list > 0 and package_cursor < #package_list then
+	       package_cursor = package_cursor + half_subwin
+	       if package_cursor > #package_list then
+		  package_cursor = #package_list
+	       end
+	       repaint()
+	    end
+	 elseif char == 'KEY_PPAGE' then
+	    if reportview_lines then
+	       reportview_head = reportview_head - half_subwin
+	       if reportview_head < 1 then reportview_head = 1 end
+	       redraw_reportview()
+	    elseif package_cursor > 1 then
+	       package_cursor = package_cursor - half_subwin
+	       if package_cursor < 1 then
+		  package_cursor = 1
+	       end
+	       repaint()
+	    end
 	 -- Show description
 	 elseif key == k.ctrl_d then
 	    if #package_list > 0 then
-	       show_descr = package_list[package_cursor].description
+	       show_description(package_list[package_cursor].description)
 	       repaint()
 	    end
 	 elseif char == 'M-d' then
@@ -602,7 +727,7 @@ function edit_tagset(tagset, installation)
 	       local entry =
 		  installation.tags[package_list[package_cursor].tag]
 	       if entry then
-		  show_descr = entry.description
+		  show_description(entry.description)
 		  repaint()
 	       end
 	    end
@@ -637,73 +762,6 @@ function edit_tagset(tagset, installation)
 	       constrain(current_constraint:sub(1, -2), current_constraint)
 	       repaint()
 	    end
-	 -- Navigation
-	 elseif char == 'KEY_RIGHT' then
-	    if current_category < #categories_sorted then
-	       select_category(current_category+1)
-	       repaint()
-	    end
-	 elseif char == 'KEY_LEFT' then
-	    if current_category > 1 then
-	       select_category(current_category-1)
-	       repaint()
-	    end
-	 elseif char == '<' then
-	    select_category(1)
-	    repaint()
-	 elseif char == '>' then
-	    select_category(#categories_sorted)
-	    repaint()
-	 elseif char == 'KEY_HOME' then
-	    package_cursor = 1
-	    repaint()
-	 elseif char == 'KEY_END' then
-	    package_cursor = #package_list
-	    repaint()
-	 elseif char == 'KEY_DOWN' then
-	    if package_cursor < #package_list then
-	       package_cursor = package_cursor+1
-	       if package_cursor == viewport_top + subwin_lines then
-		  repaint()
-	       else
-		  draw_package(package_list[package_cursor-1],
-			       package_cursor-viewport_top-1, false)
-		  draw_package(package_list[package_cursor],
-			       package_cursor-viewport_top, true)
-		  show_constraint()
-		  l.noutrefresh(package_window)
-	       end
-	    end
-	 elseif char == 'KEY_UP' then
-	    if #package_list > 0 and package_cursor > 1 then
-	       package_cursor = package_cursor - 1
-	       if package_cursor < viewport_top then
-		  repaint()
-	       else
-		  draw_package(package_list[package_cursor+1],
-			       package_cursor-viewport_top+1, false)
-		  draw_package(package_list[package_cursor],
-			       package_cursor-viewport_top, true)
-		  show_constraint()
-		  l.noutrefresh(package_window)
-	       end
-	    end
-	 elseif char == 'KEY_NPAGE' then
-	    if #package_list > 0 and package_cursor < #package_list then
-	       package_cursor = package_cursor + half_subwin
-	       if package_cursor > #package_list then
-		  package_cursor = #package_list
-	       end
-	       repaint()
-	    end
-	 elseif char == 'KEY_PPAGE' then
-	    if package_cursor > 1 then
-	       package_cursor = package_cursor - half_subwin
-	       if package_cursor < 1 then
-		  package_cursor = 1
-	       end
-	       repaint()
-	    end
 	 -- Change package state
 	 elseif key == k.ctrl_a or char == 'KEY_IC' then
 	    change_state(package_list[package_cursor], 'ADD',
@@ -732,6 +790,8 @@ function edit_tagset(tagset, installation)
 	 elseif char == 'M-x' then
 	    tagset.package_cache = nil
 	    tagset.packages_loaded = nil
+	 elseif char == 'KEY_F(15)' then
+	    -- HELP key for testing
 	 end
       end
    end
@@ -758,7 +818,7 @@ function edit_tagset(tagset, installation)
    colors.same_version = colors.ADD
    colors.missing = colors.SKP
    colors.main = bit.bor(l.color_pair(1), a.bold)
-   colors.special = bit.bor(l.color_pair(7), a.bold)
+   colors.loading = bit.bor(l.color_pair(7), a.bold)
    l.bkgd(colors.main)
    l.attron(colors.main)
    l.refresh()
