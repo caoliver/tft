@@ -249,16 +249,15 @@ function edit_tagset(tagset, installation)
 	 l.addnstr(package_window, outstr, outmax)
 	 l.attroff(package_window, colors.highlight)
 	 l.move(1, 11)
+	 local descrs=tagset.category_description[tuple.category]
+	 l.addnstr(tuple.category ..
+		      (descrs and (' - '..descrs.short) or ''), cols - 10)
 	 l.clrtoeol()
 	 l.move(1, cols-1)
 	 l.addch(b.vline)
 	 l.move(1, cols-12)
 	 l.addnstr('  '..package_cursor..'/'..#package_list, 13)
 	 l.move(subwin_lines+4, 2)
-	 l.clrtoeol()
-	 l.move(subwin_lines+4, cols-1)
-	 l.addch(b.vline)
-	 l.move(subwin_lines+4,2)
 	 local pkgdescr
 	 if tuple.version then
 	    pkgdescr =
@@ -284,12 +283,12 @@ function edit_tagset(tagset, installation)
 	 else
 	    l.addnstr(pkgdescr, outmax)
 	 end
+	 l.clrtoeol()
+	 l.move(subwin_lines+4, cols-1)
+	 l.addch(b.vline)
 	 if installation then
 	    l.move(subwin_lines+5,2)
 	    l.clrtoeol()
-	    l.move(subwin_lines+5,cols-1)
-	    l.addch(b.vline)
-	    l.move(subwin_lines+5,2)
 	    local installed = installed[tuple.tag]
 	    if installed then
 	       local instdescr =
@@ -308,12 +307,14 @@ function edit_tagset(tagset, installation)
 		  l.addnstr(instdescr, outmax)
 		  l.attroff(colors.same_version)
 	       end
+	    else
+	       l.attron(colors.missing)
+	       l.addnstr('* NOT INSTALLED *', outmax)
+	       l.attroff(colors.missing)
 	    end
+	    l.move(subwin_lines+5,cols-1)
+	    l.addch(b.vline)
 	 end
-	 l.move(1, 11)
-	 local descrs=tagset.category_description[tuple.category]
-	 l.addnstr(tuple.category ..
-		      (descrs and (' - '..descrs.short) or ''), cols - 10)
       else
 	 if tuple.required and tuple.state ~= 'ADD' then
 	    l.attron(package_window, colors.required)
