@@ -32,8 +32,8 @@ local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
 local excluded_char = make_char_bool '[]<>/ '
 local escapemap = {
    a='M-a', o='M-o', r='M-r', R='M-R', s='M-s',
-   l='M-l', L='M-L', x='M-x',
-   d='M-d'
+   l='M-l', L='M-L', x='M-x', n='M-n', N='M-N',
+   d='M-d', ['\12']='M-^L'
 }
 local constrain_state_commands={
    ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
@@ -102,9 +102,9 @@ function edit_tagset(tagset, installation)
    local rows, cols, subwin_lines, half_subwin
    local installed = installation and installation.tags or {}
 
-   local function activate_reportview(color)
+   local function activate_reportview()
       reportview_lines = { '' }
-      reportview_color = color
+      reportview_color = colors.report
       reportview_head = 1
    end
 
@@ -130,6 +130,9 @@ function edit_tagset(tagset, installation)
    end
 
    local function add_to_reportview(text)
+      if not reportview_window then
+	 redraw_reportview()
+      end
       if text then
 	 reportview_lines[#reportview_lines] =
 	    reportview_lines[#reportview_lines]..text
@@ -342,7 +345,7 @@ function edit_tagset(tagset, installation)
 
    local function show_description(description)
       local descr_lines = description and description() or {}
-      activate_reportview(colors.description)
+      activate_reportview()
       for i, line in ipairs(descr_lines) do
 	 if i > 1 then add_to_reportview() end
 	 add_to_reportview(line)
@@ -487,6 +490,30 @@ function edit_tagset(tagset, installation)
       end
    end
 
+   local function confirm(prompt, pattern, default)
+      local char, key, _
+      repeat
+	 local row, col = add_to_reportview(prompt)
+	 l.doupdate()
+	 while true do
+	    key = l.getch()
+	    if key >= 0 then break end
+	    util.usleep(1000)
+	 end
+	 if key == k.resize or key == k.ctrl_c then
+	    add_to_reportview()
+	    return default or ''
+	 end
+	 char = key >= 0 and key < 128 and string.char(key) or ''
+	 if key > 32 and key < 127 and #prompt < cols-3 then
+	    add_to_reportview(char)
+	 end
+	 add_to_reportview()
+      until not pattern or char:match(pattern)
+      l.doupdate()
+      return char == '\n' and default or char
+   end
+
    local function load_package(overwrite)
       local function print(...)
 	 local lineout = ''
@@ -500,32 +527,8 @@ function edit_tagset(tagset, installation)
 	 add_to_reportview()
       end
 
-      local function confirm(prompt, pattern, default)
-	 local char, key, _
-	 repeat
-	    local row, col = add_to_reportview(prompt)
-	    l.doupdate()
-	    while true do
-	       key = l.getch()
-	       if key >= 0 then break end
-	       util.usleep(1000)
-	    end
-	    if key == k.resize then
-	       add_to_reportview()
-	       return default or ''
-	    end
-	    char = key >= 0 and key < 128 and string.char(key) or ''
-	    if key > 32 and key < 127 and #prompt < cols-3 then
-	       add_to_reportview(char)
-	    end
-	    add_to_reportview()
-	 until not pattern or char:match(pattern)
-	 l.doupdate()
-	 return char == '\n' and default or char
-      end
-
       if #package_list > 0 then
-	 activate_reportview(colors.loading)
+	 activate_reportview()
 	 repaint()
 	 local conflicts
 	 local now = util.realtime()
@@ -568,7 +571,26 @@ function edit_tagset(tagset, installation)
 	 end
       end
    end
-   
+
+   local function report_sorted_keys(tbl, extractor, printer,
+				     singular, plural, rest)
+      if not extractor then extractor = function (x) return x end end
+      if not printer then printer = add_to_reportview end
+      activate_reportview()
+      local sorted = {}
+      for key in pairs(tbl) do table.insert(sorted, extractor(key)) end
+      table.sort(sorted)
+      add_to_reportview(''..#sorted..' ')
+      add_to_reportview(#sorted == 1 and singular or plural)
+      add_to_reportview(rest            )
+      add_to_reportview()
+      for _,item in ipairs(sorted) do
+	 add_to_reportview()
+	 add_to_reportview('    ')
+	 printer(item)
+      end
+   end
+
    local function command_loop()
       repaint()
       -- If a timeout isn't given at first, then SIGINT isn't
@@ -751,6 +773,7 @@ function edit_tagset(tagset, installation)
 	       constraint_flags_set = 0
 	       constraint_flags = {}
 	       new_constraint = ''
+	       
 	       constraint_state = { }
 	    end
 	    if #new_constraint < 16 then
@@ -787,11 +810,87 @@ function edit_tagset(tagset, installation)
 	    load_package()
 	 elseif char == 'M-L' then
 	    load_package(true)
+	 elseif char == 'M-^L' then
+	    if tagset.package_cache then
+	       report_sorted_keys(tagset.packages_loaded,
+				  function (p) return p.tag end, nil,
+				  'package', 'package', ' loaded:')
+	    end
 	 elseif char == 'M-x' then
 	    tagset.package_cache = nil
 	    tagset.packages_loaded = nil
-	 elseif char == 'KEY_F(15)' then
-	    -- HELP key for testing
+	 elseif char == 'M-n' then
+	    local cache = tagset.package_cache
+	    if cache then
+	       activate_reportview()
+	       report_sorted_keys(cache.needed, nil, nil,
+				  'library', 'libraries', ' needed')
+	    end
+	 elseif char == 'M-N' then
+	    local cache = tagset.package_cache
+	    local function needers(tag)
+	       add_to_reportview(tag)
+	       add_to_reportview()
+	       local sorted={}
+	       for key in pairs(cache.needed[tag] or {}) do
+		  table.insert(sorted, key.path)
+	       end
+	       table.sort(sorted)
+	       for _,val in ipairs(sorted) do
+		  add_to_reportview '       '
+		  add_to_reportview(val)
+		  add_to_reportview()
+	       end
+	    end
+	    if cache then
+	       activate_reportview()
+	       report_sorted_keys(cache.needed, nil, needers,
+				  'library', 'libraries', ' needed')
+	       if tagset.directory then
+		  add_to_reportview()
+		  add_to_reportview()
+		  if not tagset.manifest then
+		     if confirm('Read manifest for suggestions? (Y/n): ',
+				'[YyNn\n]', 'y') == 'y' then
+			add_to_reportview 'Reading manifest...'
+			l.doupdate()
+			tagset.manifest = read_manifest(tagset.directory)
+			add_to_reportview 'Done!'
+			add_to_reportview()
+			add_to_reportview()
+		     else
+			add_to_reportview 'Skipping suggestions'
+			l.doupdate()
+			util.usleep(1000000)
+			deactivate_reportview()
+			repaint()
+		     end
+		  end
+		  if tagset.manifest then
+		     add_to_reportview 'Suggestions:'
+		     add_to_reportview()
+		     add_to_reportview()
+		     local format = '  %-24s %-24s %-24s'
+		     add_to_reportview('PACKAGE')
+		     add_to_reportview()		     
+		     add_to_reportview(format:format('SONAME','GUESS','STEM'))
+		     add_to_reportview()
+		     add_to_reportview('  '..('-'):rep(54))
+		     add_to_reportview()
+		     local suggestions = tagset.manifest:get_suggestions(cache)
+		     for _, suggestion in ipairs(suggestions) do
+			add_to_reportview()
+			add_to_reportview(suggestion[1])
+			add_to_reportview()
+			for _, lib in ipairs(suggestion[2]) do
+			   local outstr = format:format(lib[1],lib[2],lib[3])
+			   add_to_reportview(outstr)
+			   add_to_reportview()
+			end
+		     end
+		  end
+	       end
+	    end
 	 end
       end
    end
@@ -807,7 +906,7 @@ function edit_tagset(tagset, installation)
    l.init_pair(6, a.yellow, a.black)
    l.init_pair(7, a.green, a.black)
    colors.highlight = bit.bor(l.color_pair(2), a.bold)
-   colors.description = bit.bor(l.color_pair(6), a.bold)
+   colors.report = bit.bor(l.color_pair(6), a.bold)
    colors.ADD = bit.bor(l.color_pair(3), a.bold)
    colors.SKP = bit.bor(l.color_pair(4), a.bold)
    colors.OPT = bit.bor(l.color_pair(5), a.bold)
@@ -818,7 +917,6 @@ function edit_tagset(tagset, installation)
    colors.same_version = colors.ADD
    colors.missing = colors.SKP
    colors.main = bit.bor(l.color_pair(1), a.bold)
-   colors.loading = bit.bor(l.color_pair(7), a.bold)
    l.bkgd(colors.main)
    l.attron(colors.main)
    l.refresh()
