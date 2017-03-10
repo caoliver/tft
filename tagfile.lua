@@ -463,6 +463,9 @@ function read_tagset(tagset_directory, skip_kde)
 	 tuple.required = nil
       end
       self.category_description = {}
+      self.manifest = {}
+      self.package_cache = {}
+      self.packages_loaded = {}
       if not directory then return end
       directory = cleanuppath(directory)
       local txtfiles_pipe =
