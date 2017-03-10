@@ -785,6 +785,16 @@ function edit_tagset(tagset, installation)
 	       constrain(current_constraint:sub(1, -2), current_constraint)
 	       repaint()
 	    end
+	 -- Help
+	 elseif char == '?' or char == 'KEY_F(15)' then
+	    activate_reportview()
+	    for i, line in ipairs {
+	       'Key command help','', 'TO BE DONE'
+				  }
+	    do
+	       if i > 1 then add_to_reportview() end
+	       add_to_reportview(line)
+	    end
 	 -- Change package state
 	 elseif key == k.ctrl_a or char == 'KEY_IC' then
 	    change_state(package_list[package_cursor], 'ADD',
