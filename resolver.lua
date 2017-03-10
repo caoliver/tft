@@ -1,6 +1,4 @@
-local bad_offers = {
-   ['m17n-lib'] = {'libm.so.'},
-}
+local bad_offers = dofile 'bad_offers.lua'
 
 -- This is redundant.
 local function cleanuppath(path)
@@ -85,7 +83,7 @@ function read_archive(archive_file, myprint, mygetch)
       seen = nil
       local remove = {}
       local removes
-      for needed, _ in pairs(self.needed) do
+      for needed in pairs(self.needed) do
 	 local satisfied = {}
 	 for _, path in ipairs(paths) do
 	    if util.lib_exists(path..'/'..needed) then
@@ -107,20 +105,20 @@ function read_archive(archive_file, myprint, mygetch)
       if not removes then return end
       local confirm = getch('Remove satisfied needs? (y/N):',  '[YyNn\n]', 'n')
       if confirm:upper() == 'N' then return end
-      for needed, _ in pairs(remove) do
+      for needed in pairs(remove) do
 	 self.needed[needed] = nil
       end
    end
 
    local function clone(self)
       local new = create()
-      for sum, _ in pairs(self.archivesums) do
+      for sum in pairs(self.archivesums) do
 	 new.archivesums[sum] = true
       end
       for path, name in pairs(self.elfpaths) do
 	 new.elfpaths[path] = name
       end
-      for soname, _ in pairs(self.sonames) do
+      for soname in pairs(self.sonames) do
 	 new.sonames[soname] = true
       end
       for _, elf in ipairs(self.elfs) do
@@ -128,7 +126,7 @@ function read_archive(archive_file, myprint, mygetch)
       end
       for name, elftable in pairs(self.needed) do
 	 local newelfs = {}
-	 for elf, _ in pairs(elftable) do newelfs[elf] = true end
+	 for elf in pairs(elftable) do newelfs[elf] = true end
 	 new.needed[name] = newelfs
       end
       return new
@@ -196,11 +194,11 @@ function read_archive(archive_file, myprint, mygetch)
       end
       os.execute('find $(readlink -f '..tmpdir..') -mindepth 1 -delete')
       -- resolve internal needed.  (Assumes architecture matches.)
-      for soname, _ in pairs(sonames) do needed[soname] = nil end
+      for soname in pairs(sonames) do needed[soname] = nil end
       local found = {}
       for name,elfs in pairs(needed) do
 	 local unresolved = 0
-	 for elf, _ in pairs(elfs) do
+	 for elf in pairs(elfs) do
 	    unresolved = unresolved + 1
 	    for _, path in ipairs(elf.runpath or elf.rpath or {}) do
 	       if path == '$ORIGIN' then
@@ -342,5 +340,6 @@ function read_manifest(archive_directory)
       end
    end
    
-   return { suggest = suggest, associations = associations }
+   return { suggest = suggest, get_suggestions = get_suggestions,
+	    associations = associations }
 end

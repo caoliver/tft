@@ -121,7 +121,7 @@ function read_installation(prefix)
 
    local function like(self, pattern)
       local set = {}
-      for tag, _ in pairs(self.tags) do
+      for tag in pairs(self.tags) do
 	 if tag:match(pattern) then table.insert(set, tag) end
       end
       return { set=set, show=show_matches, describe=describe }
@@ -201,7 +201,7 @@ function read_tagset(tagset_directory, skip_kde)
 
    local function like(self, pattern)
       local set = {}
-      for tag, _ in pairs(self.tags) do
+      for tag in pairs(self.tags) do
 	 if tag:match(pattern) then table.insert(set, tag) end
       end
       return { set=set, show=show_matches }
