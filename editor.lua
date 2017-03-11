@@ -380,10 +380,9 @@ function edit_tagset(tagset, installation)
 	 l.delwin(reportview_window)
 	 reportview_window = nil
       end
+      redraw_package_list()
       if reportview_lines then
 	 redraw_reportview()
-      else
-	 redraw_package_list()
       end
    end
 
