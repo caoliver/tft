@@ -24,7 +24,7 @@ local function make_char_bool(str)
    return booltab
 end
 
-local l = require 'ljcurses'
+local l = ljcurses
 local a = l.attributes
 local b = l.boxes
 local k = l.keys
