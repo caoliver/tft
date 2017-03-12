@@ -32,7 +32,7 @@ local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
 local excluded_char = make_char_bool '[]<>/ '
 local escapemap = {
    a='M-a', o='M-o', r='M-r', R='M-R', s='M-s',
-   l='M-l', L='M-L', x='M-x', n='M-n', N='M-N',
+   l='M-l', L='M-L', x='M-x', n='M-n', N='M-N', ['\14']='M-^N',
    d='M-d', ['\12']='M-^L'
 }
 local constrain_state_commands={
@@ -213,11 +213,11 @@ function edit_tagset(tagset, installation)
       end
    end
 
-   -- global refs: package_cursor, package_list, package_window
-   local function draw_package(tuple, line, selected)
+   local function draw_package_line(tuple, line, selected)
+      local outstr = tagformat:format(tuple.tag)
+      local outmax=cols-4
       l.move(package_window, line, 0)
       l.clrtoeol(package_window)
-      local outstr = tagformat:format(tuple.tag)
       l.attron(package_window, colors[tuple.state])
       l.addstr(package_window, state_signs[tuple.state])
       l.attroff(package_window, colors[tuple.state])
@@ -228,7 +228,6 @@ function edit_tagset(tagset, installation)
 	 l.addch(package_window, b.diamond)
 	 l.attroff(package_window, colors[tuple.old_state])
       end
-      local outmax=cols-4
       if installation and not installed[tuple.tag] then
 	 outstr = outstr:sub(1,#outstr-1)
 	 l.attron(package_window, colors.missing)
@@ -242,73 +241,6 @@ function edit_tagset(tagset, installation)
 	 l.attron(package_window, colors.highlight)
 	 l.addnstr(package_window, outstr, outmax)
 	 l.attroff(package_window, colors.highlight)
-	 l.move(1, 11)
-	 local descrs=tagset.category_description[tuple.category]
-	 l.addnstr(tuple.category ..
-		      (descrs and (' - '..descrs.short) or ''), cols - 10)
-	 l.clrtoeol()
-	 l.move(1, cols-1)
-	 l.addch(b.vline)
-	 l.move(1, cols-12)
-	 l.addnstr('  '..package_cursor..'/'..#package_list, 13)
-	 l.move(subwin_lines+4, 2)
-	 local pkgdescr
-	 if tuple.version then
-	    pkgdescr =
-	       string.format('%s-%s-%s-%s  state: %s',
-			     tuple.tag,
-			     tuple.version,
-			     tuple.arch,
-			     tuple.build,
-			     tuple.state)
-	 else
-	    pkgdescr =
-	       string.format('%s  state: %s',
-			     tuple.tag,
-			     tuple.state)
-	 end
-	 if tuple.state ~= tuple.old_state then
-	    pkgdescr = pkgdescr..' was: '..tuple.old_state
-	 end
-	 if tuple.required and tuple.state ~= 'ADD' then
-	    l.attron(colors.required)
-	    l.addnstr(pkgdescr, outmax)
-	    l.attroff(colors.required)
-	 else
-	    l.addnstr(pkgdescr, outmax)
-	 end
-	 l.clrtoeol()
-	 l.move(subwin_lines+4, cols-1)
-	 l.addch(b.vline)
-	 if installation then
-	    l.move(subwin_lines+5,2)
-	    l.clrtoeol()
-	    local installed = installed[tuple.tag]
-	    if installed then
-	       local instdescr =
-		  string.format('Installed %s-%s-%s-%s',
-				installed.tag,
-				installed.version,
-				installed.arch,
-				installed.build)
-	       if tuple.version ~= installed.version
-		  or tuple.arch ~= installed.arch
-		  or tuple.build ~= installed.build
-	       then
-		  l.addnstr(instdescr, outmax)
-	       else
-		  l.attron(colors.same_version)
-		  l.addnstr(instdescr, outmax)
-		  l.attroff(colors.same_version)
-	       end
-	    else
-	       l.attron(colors.missing)
-	       l.addnstr('* NOT INSTALLED *', outmax)
-	       l.attroff(colors.missing)
-	    end
-	    l.move(subwin_lines+5,cols-1)
-	    l.addch(b.vline)
-	 end
       else
 	 if tuple.required and tuple.state ~= 'ADD' then
 	    l.attron(package_window, colors.required)
@@ -319,8 +251,79 @@ function edit_tagset(tagset, installation)
 	 end
       end
    end
+   
+   local function draw_package_top_win(tuple)
+      local outstr
+      local outmax=cols-4
+      l.move(1, 11)
+      local descrs=tagset.category_description[tuple.category]
+      l.addnstr(tuple.category ..
+		   (descrs and (' - '..descrs.short) or ''), cols - 10)
+      l.clrtoeol()
+      l.move(1, cols-1)
+      l.addch(b.vline)
+      l.move(1, cols-12)
+      l.addnstr('  '..package_cursor..'/'..#package_list, 13)
+      l.move(subwin_lines+4, 2)
+      local pkgdescr
+      if tuple.version then
+	 pkgdescr =
+	    string.format('%s-%s-%s-%s  state: %s',
+			  tuple.tag, tuple.version, tuple.arch,
+			  tuple.build, tuple.state)
+      else
+	 pkgdescr =
+	    string.format('%s  state: %s', tuple.tag, tuple.state)
+      end
+      if tuple.state ~= tuple.old_state then
+	 pkgdescr = pkgdescr..' was: '..tuple.old_state
+      end
+      if tuple.required and tuple.state ~= 'ADD' then
+	 l.attron(colors.required)
+	 l.addnstr(pkgdescr, outmax)
+	 l.attroff(colors.required)
+      else
+	 l.addnstr(pkgdescr, outmax)
+      end
+      l.clrtoeol()
+      l.move(subwin_lines+4, cols-1)
+      l.addch(b.vline)
+      if installation then
+	 l.move(subwin_lines+5,2)
+	 l.clrtoeol()
+	 local installed = installed[tuple.tag]
+	 if installed then
+	    local instdescr =
+	       string.format('Installed %s-%s-%s-%s',
+			     installed.tag, installed.version,
+			     installed.arch, installed.build)
+	    if tuple.version ~= installed.version
+	       or tuple.arch ~= installed.arch
+	       or tuple.build ~= installed.build
+	    then
+	       l.addnstr(instdescr, outmax)
+	    else
+	       l.attron(colors.same_version)
+	       l.addnstr(instdescr, outmax)
+	       l.attroff(colors.same_version)
+	    end
+	 else
+	    l.attron(colors.missing)
+	    l.addnstr('* NOT INSTALLED *', outmax)
+	    l.attroff(colors.missing)
+	 end
+	 l.move(subwin_lines+5,cols-1)
+	 l.addch(b.vline)
+      end
+   end
 
-   -- global refs: package_cursor, package_list, package_window, viewport_top
+   local function draw_package(tuple, line, selected)
+      draw_package_line(tuple, line, selected)
+      if selected then
+	 draw_package_top_win(tuple)
+      end
+   end
+   
    local function redraw_package_list()
       if not package_window then
 	 package_window = l.newwin(subwin_lines, cols-2, 3, 1)
@@ -372,17 +375,22 @@ function edit_tagset(tagset, installation)
       l.move(subwin_lines + 3, cols-1)
       l.addch(b.rtee)
       l.noutrefresh()
-      if package_window then
-	 l.delwin(package_window)
-	 package_window = nil
-      end
-      if reportview_window then
-	 l.delwin(reportview_window)
-	 reportview_window = nil
-      end
       redraw_package_list()
       if reportview_lines then
+	 if #package_list then
+	    draw_package_top_win(package_list[package_cursor])
+	 end
+	 if reportview_window then
+	    l.delwin(reportview_window)
+	    reportview_window = nil
+	 end
 	 redraw_reportview()
+      else
+	 if package_window then
+	    l.delwin(package_window)
+	    package_window = nil
+	 end
+	 redraw_package_list()
       end
    end
 
@@ -588,6 +596,7 @@ function edit_tagset(tagset, installation)
 	 add_to_reportview('    ')
 	 printer(item)
       end
+      repaint()
    end
 
    local function command_loop()
@@ -831,11 +840,10 @@ function edit_tagset(tagset, installation)
 	 elseif char == 'M-n' then
 	    local cache = tagset.package_cache
 	    if cache then
-	       activate_reportview()
 	       report_sorted_keys(cache.needed, nil, nil,
 				  'library', 'libraries', ' needed')
 	    end
-	 elseif char == 'M-N' then
+	 elseif char == 'M-^N' or char == 'M-N' then
 	    local cache = tagset.package_cache
 	    local function needers(tag)
 	       add_to_reportview(tag)
@@ -850,10 +858,12 @@ function edit_tagset(tagset, installation)
 		  add_to_reportview(val)
 		  add_to_reportview()
 	       end
+	       repaint()
 	    end
 	    if cache then
 	       activate_reportview()
-	       report_sorted_keys(cache.needed, nil, needers,
+	       report_sorted_keys(cache.needed, nil,
+				  char == 'M-^N' and needers,
 				  'library', 'libraries', ' needed')
 	       if tagset.directory then
 		  add_to_reportview()
@@ -880,7 +890,7 @@ function edit_tagset(tagset, installation)
 		     add_to_reportview()
 		     add_to_reportview()
 		     local format = '  %-24s %-24s %-24s'
-		     add_to_reportview('PACKAGE')
+		     add_to_reportview('CATEGORY / PACKAGE [-- STATE]')
 		     add_to_reportview()		     
 		     add_to_reportview(format:format('SONAME','GUESS','STEM'))
 		     add_to_reportview()
@@ -889,12 +899,20 @@ function edit_tagset(tagset, installation)
 		     local suggestions = tagset.manifest:get_suggestions(cache)
 		     for _, suggestion in ipairs(suggestions) do
 			add_to_reportview()
-			add_to_reportview(suggestion[1])
-			add_to_reportview()
-			for _, lib in ipairs(suggestion[2]) do
-			   local outstr = format:format(lib[1],lib[2],lib[3])
-			   add_to_reportview(outstr)
+			local tuple = tagset.tags[suggestion[1]]
+			if char == 'M-^N' or tuple.state == 'ADD' then
+			   add_to_reportview(tuple.category..' / '..
+						suggestion[1])
+			   if tuple.state ~= 'ADD' then
+			      add_to_reportview(' -- '..tuple.state)
+			   end
 			   add_to_reportview()
+			   for _, lib in ipairs(suggestion[2]) do
+			      local outstr =
+				 format:format(lib[1],lib[2],lib[3])
+			      add_to_reportview(outstr)
+			      add_to_reportview()
+			   end
 			end
 		     end
 		  end
