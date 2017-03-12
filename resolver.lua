@@ -1,5 +1,3 @@
-local bad_offers = dofile 'bad_offers.lua'
-
 -- This is redundant.
 local function cleanuppath(path)
    if not path then error('Invalid path: '..tostring(path)) end
