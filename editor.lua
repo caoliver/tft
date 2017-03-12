@@ -1,4 +1,4 @@
--- [[
+--[[
 function opendebug(ptsnum)
    if debugout then debugout:close() end
    debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
@@ -15,7 +15,7 @@ function debug(...)
    debugout:write '\r\n'
 end
 
-opendebug(3)
+opendebug(FOO)
 --]]
 
 local function make_char_bool(str)
