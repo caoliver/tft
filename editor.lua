@@ -31,16 +31,16 @@ local k = l.keys
 local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
 local excluded_char = make_char_bool '[]<>/ '
 local escapemap = {
-   a='M-a', o='M-o', r='M-r', R='M-R', s='M-s', C='M-C',
+   a='M-a', o='M-o', r='M-r', R='M-R', s='M-s', C='M-C', M='M-M',
    l='M-l', L='M-L', x='M-x', n='M-n', N='M-N', ['\14']='M-^N',
    d='M-d', ['\12']='M-^L'
 }
 local constrain_state_commands={
    ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
-   ['M-R']='REQ', ['M-C']='CHG'
+   ['M-R']='REQ', ['M-C']='CHG', ['M-M']='MIS'
 }
 local constraint_special_flags = {}
-local constraint_special_flag_names = { 'CHG', 'REQ' }
+local constraint_special_flag_names = { 'CHG', 'REQ', 'MIS' }
 do
    local power=1
    for _, name in ipairs(constraint_special_flag_names) do
@@ -440,9 +440,12 @@ function edit_tagset(tagset, installation)
 
    local function match_constraint(tuple, constraint)
       if bit.band(constraint_bits, constraint_special_flags.REQ) ~= 0
-	 and not tuple.required then return end
+      and not tuple.required then return end
       if bit.band(constraint_bits, constraint_special_flags.CHG) ~= 0
-	 and tuple.state == tuple.old_state then return end
+      and tuple.state == tuple.old_state then return end
+      if bit.band(constraint_bits, constraint_special_flags.MIS) ~= 0
+      and installation and installation.tags[tuple.tag] then return end
+
       if constraint_flags_set > 0 and not constraint_flags[tuple.state] then
 	 return
       end
