@@ -122,6 +122,7 @@ function edit_tagset(tagset, installation)
    local special_window
    local rows, cols, subwin_lines, half_subwin
    local installed = installation and installation.tags or {}
+   local skip_kde = tagset.skip_kde
 
    local function activate_reportview()
       reportview_lines = { '' }
@@ -423,6 +424,16 @@ function edit_tagset(tagset, installation)
       end
    end
 
+   local function filter_kde(package_list)
+      local newlist = {}
+      for _,tuple in ipairs(package_list) do
+	 if tuple.category:sub(1,3) ~= 'kde' then
+	    table.insert(newlist, tuple)
+	 end
+      end
+      return newlist
+   end
+
    -- Constraint stuff
    local function clear_constraint()
       if current_constraint then
@@ -435,11 +446,13 @@ function edit_tagset(tagset, installation)
 	 current_category = category_index[last_package.category]
 	 package_cursor = last_package.category_index
 	 package_list = tagset.categories[last_package.category]
+	 if skip_kde then package_list = filter_kde(package_list) end
 	 repaint()
       end
    end
 
    local function match_constraint(tuple, constraint)
+      if skip_kde and tuple.category:sub(1,3) == 'kde' then return end
       if bit.band(constraint_bits, constraint_special_flags.REQ) ~= 0
       and not tuple.required then return end
       if bit.band(constraint_bits, constraint_special_flags.CHG) ~= 0
@@ -516,6 +529,7 @@ function edit_tagset(tagset, installation)
 	 package_cursors[current_category] = save_package.category_index
 	 package_cursor = package_cursors[new_category] or 1
 	 package_list = tagset.categories[categories_sorted[new_category]]
+	 if skip_kde then package_list = filter_kde(package_list) end
 	 current_category = new_category
       end
    end
@@ -677,14 +691,20 @@ function edit_tagset(tagset, installation)
 	 end
 	 -- Navigation
 	 if char == 'KEY_RIGHT' then
-	    if current_category < #categories_sorted then
+	    while current_category < #categories_sorted do
 	       select_category(current_category+1)
-	       repaint()
+	       if #package_list > 0 then
+		  repaint()
+		  break
+	       end
 	    end
 	 elseif char == 'KEY_LEFT' then
-	    if current_category > 1 then
+	    while current_category > 1 do
 	       select_category(current_category-1)
-	       repaint()
+	       if #package_list > 0 then
+		  repaint()
+		  break
+	       end
 	    end
 	 elseif char == '<' then
 	    select_category(1)
