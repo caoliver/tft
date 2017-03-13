@@ -31,14 +31,24 @@ local k = l.keys
 local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
 local excluded_char = make_char_bool '[]<>/ '
 local escapemap = {
-   a='M-a', o='M-o', r='M-r', R='M-R', s='M-s',
+   a='M-a', o='M-o', r='M-r', R='M-R', s='M-s', C='M-C',
    l='M-l', L='M-L', x='M-x', n='M-n', N='M-N', ['\14']='M-^N',
    d='M-d', ['\12']='M-^L'
 }
 local constrain_state_commands={
    ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
-   ['M-R']='REQ'
+   ['M-R']='REQ', ['M-C']='CHG'
 }
+local constraint_special_flags = {}
+local constraint_special_flag_names = { 'CHG', 'REQ' }
+do
+   local power=1
+   for _, name in ipairs(constraint_special_flag_names) do
+      constraint_special_flags[name] = power
+      power = 2 * power
+   end
+end
+
 local scroll_keys={
    KEY_HOME=true, KEY_END=true,
    KEY_UP=true, KEY_DOWN=true,
@@ -51,6 +61,9 @@ local function assert(bool, ...)
 end
 
 function edit_tagset(tagset, installation)
+   assert(tagset.type == 'tagset', 'Self is not a tagset')
+   assert(not installation or installation.type == 'installation',
+	  'Argument is not an installation')
    if installation == false then
       tagset.installation = nil
    elseif installation then
@@ -99,6 +112,7 @@ function edit_tagset(tagset, installation)
    local current_constraint
    local constraint_flags = {}
    local constraint_flags_set = 0
+   local constraint_bits = 0
    local only_required = false
    local package_window
    local reportview_lines
@@ -174,11 +188,11 @@ function edit_tagset(tagset, installation)
    do
       local constraint_flag_string = ''
       local last_flag_count = 0
-      local last_required = false
+      local last_constraint_bits = 0
       get_constraint_flag_string = function ()
 	 if last_flag_count ~= constraint_flags_set
-	 or last_required ~= only_required then
-	    if constraint_flags_set > 0 or only_required then
+	 or last_constraint_bits ~= constraint_bits then
+	    if constraint_flags_set > 0 or constraint_bits then
 	       local newcfs = ' ['
 	       for _,flag in ipairs { 'ADD', 'OPT', 'REC', 'SKP' } do
 		  if constraint_flags[flag] then
@@ -186,16 +200,23 @@ function edit_tagset(tagset, installation)
 			({ADD='a',OPT='o',REC='r',SKP='s'})[flag]
 		  end
 	       end
-	       if only_required then
-		  constraint_flag_string = newcfs..'R]'
-	       else
-		  constraint_flag_string = newcfs..']'
+	       for _, bitname in ipairs(constraint_special_flag_names) do
+		  if not constraint_special_flags[bitname] then
+		     l.endwin()
+		     print(bitname)
+		     os.exit(0)
+		  end
+		  if bit.band(constraint_bits,
+			      constraint_special_flags[bitname]) ~= 0 then
+		     newcfs = newcfs..bitname:sub(1,1)
+		  end
 	       end
+	       constraint_flag_string = newcfs..']'
 	    else
 	       constraint_flag_string = ''
 	    end
 	    last_flag_count = constraint_flags_set
-	    last_required = only_required
+	    last_constraint_bits = constraint_bits
 	 end
 	 return constraint_flag_string
       end
@@ -406,6 +427,7 @@ function edit_tagset(tagset, installation)
       if current_constraint then
 	 assert(last_package, "last_package not assigned")
 	 current_constraint = nil
+	 constraint_bits = 0
 	 if #package_list > 0 then
 	    last_package = package_list[package_cursor]
 	 end
@@ -417,8 +439,11 @@ function edit_tagset(tagset, installation)
    end
 
    local function match_constraint(tuple, constraint)
-      if only_required and not tuple.required
-      or constraint_flags_set > 0 and not constraint_flags[tuple.state] then
+      if bit.band(constraint_bits, constraint_special_flags.REQ) ~= 0
+	 and not tuple.required then return end
+      if bit.band(constraint_bits, constraint_special_flags.CHG) ~= 0
+	 and tuple.state == tuple.old_state then return end
+      if constraint_flags_set > 0 and not constraint_flags[tuple.state] then
 	 return
       end
       return tuple.tag:find(constraint)
@@ -460,8 +485,9 @@ function edit_tagset(tagset, installation)
    end
 
    local function toggle_constrain_by_state(flag)
-      if flag == 'REQ' then
-	 only_required = not only_required
+      if constraint_special_flags[flag] then
+	 constraint_bits = bit.bxor(constraint_bits,
+				    constraint_special_flags[flag])
       else
 	 local old_flag = constraint_flags[flag]
 	 if old_flag then
