@@ -51,6 +51,13 @@ local function assert(bool, ...)
 end
 
 function edit_tagset(tagset, installation)
+   if installation == false then
+      tagset.installation = nil
+   elseif installation then
+      tagset.installation = installation
+   else
+      installation = tagset.installation
+   end
    local categories_sorted = tagset.categories_sorted
    local category_index = tagset.category_index or {}
    if not tagset.categories_sorted then
