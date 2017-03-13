@@ -1,5 +1,5 @@
 dummy= #_G --[[
-   script=$(readlink "$0")
+   script=$(readlink -f "$0")
    origin=$(readlink -m "$script/..")
    completions=/dev/null
    [ -f $origin/completions ] && completions=$origin/completions
@@ -9,7 +9,6 @@ dummy= #_G --[[
 	       lua -i "$script"
 #--]]
 dummy=nil
-
 local origin=(arg and (arg[0]:match '^(.*)/') or '.')
 util=package.loadlib(origin..'/util.so', 'luaopen_util')()
 elfutil=package.loadlib(origin..'/elfutil.so', 'luaopen_elfutil')()
