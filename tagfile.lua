@@ -179,6 +179,12 @@ local tagset_list = {}
 local tagset_next_instance = {}
 setmetatable(tagset_list, {__mode = 'k'})
 
+local function get_instance(directory)
+   local new_instance = 1 + (tagset_next_instance[directory] or 0)
+   tagset_next_instance[directory] = new_instance
+   return new_instance
+end
+
 function read_tagset(tagset_directory, skip_kde)
    local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
 
@@ -308,6 +314,13 @@ function read_tagset(tagset_directory, skip_kde)
 	 self.dirty = false
 	 self.directory = directory
       end
+   end
+
+   local function preserve_state(self, filename)
+      local destination, err = io.open(filename, 'w')
+      assert(destination, err)
+      destination:write(marshal.encode(self))
+      destination:close()
    end
 
    local function missing(self, installation)
@@ -447,12 +460,6 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
-   local function get_instance(directory)
-      local new_instance = 1 + (tagset_next_instance[directory] or 0)
-      tagset_next_instance[directory] = new_instance
-      return new_instance
-   end
-
    local function change_archive(self, directory)
       for _,tuple in pairs(self.tags) do
 	 tuple.version = nil
@@ -533,9 +540,10 @@ function read_tagset(tagset_directory, skip_kde)
       local newset = {
 	 tags = {}, categories = {}, directory = self.directory,
 	 category_description = self.category_description,
-	 write = write_tagset, show=show_like, change_archive = change_archive,
-	 forget=forget_changes, set=set_state, like=like, describe=describe,
-	 compare=compare, missing=missing, clone=clone, edit=edit,
+	 write = write_tagset, preserve = preserve_state, show=show_like,
+	 change_archive = change_archive, forget=forget_changes,
+	 set=set_state, like=like, describe=describe, compare=compare,
+	 missing=missing, clone=clone, edit=edit,
 	 change_archive = change_archive, type=type }
       for category,tags in pairs(self.categories) do
 	 local taglist = {}
@@ -557,8 +565,9 @@ function read_tagset(tagset_directory, skip_kde)
    local tagset = {
       type = 'tagset', tags = {}, categories = {},
       directory = tagset_directory, category_description = {},
-      write = write_tagset, show=show_like, change_archive=change_archive,
-      forget=forget_changes, set=set_state, like=like, describe=describe,
+      write = write_tagset, preserve = preserve_state, show=show_like,
+      change_archive=change_archive, forget=forget_changes,
+      set=set_state, like=like, describe=describe,
       compare=compare, missing=missing, clone=clone, edit=edit }
    local category_pipe = io.popen('find '..tagset_directory..
 				     ' -mindepth 1 -maxdepth 1 -type d')
@@ -596,6 +605,16 @@ function read_tagset(tagset_directory, skip_kde)
    tagset_list_changed= true
    tagset_list[tagset] = true
    tagset.instance = get_instance(tagset_directory)
+   return tagset
+end
+
+
+function reconstitute(filename)
+   local source, err = io.open(filename)
+   assert(source, err)
+   local tagset = marshal.decode(source:read '*a')
+   tagset_list[tagset] = true
+   tagset.instance = get_instance(tagset.directory)
    return tagset
 end
 
