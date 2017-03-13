@@ -1,11 +1,12 @@
 dummy= #_G --[[
-   origin=$(readlink -m "$0/..")
+   script=$(readlink "$0")
+   origin=$(readlink -m "$script/..")
    completions=/dev/null
    [ -f $origin/completions ] && completions=$origin/completions
    exec rlwrap -b ":(){}[],+-=&^%$#@\"';|\\"  \
 	       -f $completions		     \
-	       -c -H $HOME/.${0##*/}_history \
-	       lua -i "$0"
+	       -c -H $HOME/.${script##*/}_history \
+	       lua -i "$script"
 #--]]
 dummy=nil
 
