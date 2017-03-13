@@ -335,10 +335,10 @@ function read_tagset(tagset_directory, skip_kde)
 	 end
       end
       if #missing_required > 0 then
-	 print('  Missing reqirements from installation:')
+	 print('  Missing ADDs from installation:')
 	 show_matches {set=missing_required}
       else
-	 print '  No missing requirements!'
+	 print '  No missing ADDs!'
       end
    end
 
@@ -536,6 +536,22 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
+   local function copy_states(self, source, silent)
+      assert(source.type == 'tagset', 'Source isn\'t a tagset')
+      for tag, tuple in pairs(self.tags) do
+	 local source_tuple = source.tags[tag]
+	 if source_tuple then
+	    local format = 'Changing state of tag %s from %s to %s.'
+	    if not silent and source_tuple.state ~= tuple.state then
+	       print(format:format(tag, tuple.state, source_tuple.state))
+	    end
+	    tuple.state = source_tuple.state
+	 else
+	    print('Source doesn\'t contain tag '..tag)
+	 end
+      end
+   end
+
    local function clone(self)
       local newset = {
 	 tags = {}, categories = {}, directory = self.directory,
@@ -543,7 +559,7 @@ function read_tagset(tagset_directory, skip_kde)
 	 write = write_tagset, preserve = preserve_state, show=show_like,
 	 change_archive = change_archive, forget=forget_changes,
 	 set=set_state, like=like, describe=describe, compare=compare,
-	 missing=missing, clone=clone, edit=edit,
+	 copy_states = copy_states, missing=missing, clone=clone, edit=edit,
 	 change_archive = change_archive, type=type }
       for category,tags in pairs(self.categories) do
 	 local taglist = {}
@@ -567,7 +583,7 @@ function read_tagset(tagset_directory, skip_kde)
       directory = tagset_directory, category_description = {},
       write = write_tagset, preserve = preserve_state, show=show_like,
       change_archive=change_archive, forget=forget_changes,
-      set=set_state, like=like, describe=describe,
+      set=set_state, like=like, describe=describe, copy_states = copy_states,
       compare=compare, missing=missing, clone=clone, edit=edit }
    local category_pipe = io.popen('find '..tagset_directory..
 				     ' -mindepth 1 -maxdepth 1 -type d')

@@ -1,6 +1,7 @@
 change_archive
 clone
 compare
+copy_states
 describe
 extend
 forget
@@ -12,5 +13,4 @@ read_manifest
 read_tagset
 reconstitute
 show
-
 write
