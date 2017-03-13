@@ -556,6 +556,7 @@ function read_tagset(tagset_directory, skip_kde)
       local newset = {
 	 tags = {}, categories = {}, directory = self.directory,
 	 category_description = self.category_description,
+	 skip_kde = skip_kde,
 	 write = write_tagset, preserve = preserve_state, show=show_like,
 	 change_archive = change_archive, forget=forget_changes,
 	 set=set_state, like=like, describe=describe, compare=compare,
@@ -581,6 +582,7 @@ function read_tagset(tagset_directory, skip_kde)
    local tagset = {
       type = 'tagset', tags = {}, categories = {},
       directory = tagset_directory, category_description = {},
+      skip_kde = skip_kde,
       write = write_tagset, preserve = preserve_state, show=show_like,
       change_archive=change_archive, forget=forget_changes,
       set=set_state, like=like, describe=describe, copy_states = copy_states,
