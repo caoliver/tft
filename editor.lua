@@ -900,7 +900,7 @@ function edit_tagset(tagset, installation)
 		     for _, suggestion in ipairs(suggestions) do
 			add_to_reportview()
 			local tuple = tagset.tags[suggestion[1]]
-			if char == 'M-^N' or tuple.state == 'ADD' then
+			if char == 'M-^N' or tuple.state ~= 'ADD' then
 			   add_to_reportview(tuple.category..' / '..
 						suggestion[1])
 			   if tuple.state ~= 'ADD' then
