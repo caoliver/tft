@@ -1007,7 +1007,9 @@ function edit_tagset(tagset, installation)
    local result={pcall(command_loop)}
    l.endwin()
    clear_constraint()
-   if not result[1] then print(unpack(result)) end
+   if not result[1] and not result[2]:match ': interrupted!$' then
+      print(result[2])
+   end
    if not current_constraint then
       last_package = package_list[package_cursor]
    end
