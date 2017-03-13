@@ -258,6 +258,7 @@ function edit_tagset(tagset, installation)
       end
       if installation and not installed[tuple.tag] then
 	 outstr = outstr:sub(1,#outstr-1)
+	 outmax = outmax - 1
 	 l.attron(package_window, colors.missing)
 	 l.addstr(package_window, '*')
 	 l.attroff(package_window, colors.missing)
