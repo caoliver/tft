@@ -1,0 +1,12 @@
+read_tagset
+read_installation
+describe
+show
+write
+compare
+missing
+forget
+clone
+read_manifest
+read_archive
+extend

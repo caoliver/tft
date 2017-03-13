@@ -1,5 +1,12 @@
 dummy= #_G --[[
-   exec rlwrap -H $HOME/.${0##*/}_history lua -i "$0"
+   origin=$(readlink -m "$0/..")
+   completions=/dev/null
+   [ -f $origin/completions ] && completions=$origin/completions
+   echo "completions = $completions"
+   exec rlwrap -b ":(){}[],+-=&^%$#@\"';|\\"  \
+	       -f $completions		     \
+	       -c -H $HOME/.${0##*/}_history \
+	       lua -i "$0"
 #--]]
 dummy=nil
 
