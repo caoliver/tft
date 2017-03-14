@@ -193,7 +193,7 @@ function edit_tagset(tagset, installation)
       get_constraint_flag_string = function ()
 	 if last_flag_count ~= constraint_flags_set
 	 or last_constraint_bits ~= constraint_bits then
-	    if constraint_flags_set > 0 or constraint_bits then
+	    if constraint_flags_set > 0 or constraint_bits > 0 then
 	       local newcfs = ' ['
 	       for _,flag in ipairs { 'ADD', 'OPT', 'REC', 'SKP' } do
 		  if constraint_flags[flag] then
@@ -439,7 +439,10 @@ function edit_tagset(tagset, installation)
       if current_constraint then
 	 assert(last_package, "last_package not assigned")
 	 current_constraint = nil
+	 constraint_flags = {}
+	 constraint_flags_set = 0
 	 constraint_bits = 0
+	 get_constraint_flag_string() -- Cached status string may be invalid
 	 if #package_list > 0 then
 	    last_package = package_list[package_cursor]
 	 end
