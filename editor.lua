@@ -466,7 +466,8 @@ function edit_tagset(tagset, installation)
       if constraint_flags_set > 0 and not constraint_flags[tuple.state] then
 	 return
       end
-      return tuple.tag:find(constraint)
+      -- Case insensitive match
+      return tuple.tag:lower():find(constraint:lower())
    end
    
    local function constrain(constraint, old_constraint)
