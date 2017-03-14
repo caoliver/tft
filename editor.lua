@@ -33,7 +33,7 @@ local excluded_char = make_char_bool '[]<>/ '
 local escapemap = {
    a='M-a', o='M-o', r='M-r', R='M-R', s='M-s', C='M-C', M='M-M',
    l='M-l', L='M-L', x='M-x', n='M-n', N='M-N', ['\14']='M-^N',
-   d='M-d', ['\12']='M-^L'
+   d='M-d', ['\12']='M-^L', u='M-u'
 }
 local constrain_state_commands={
    ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
@@ -594,7 +594,7 @@ function edit_tagset(tagset, installation)
 	 local conflicts
 	 local now = util.realtime()
 	 local tuple = package_list[package_cursor]
-	 local file = string.format('%s/%s-%s-%s-%s.txz',
+	 local file = string.format('%s/%s-%s-%s-%s',
 				    tuple.category,
 				    tuple.tag,
 				    tuple.version,
@@ -692,8 +692,11 @@ function edit_tagset(tagset, installation)
 	    repaint()
 	    goto continue
 	 end
+	 if char == 'M-u' then
+	    tagset.show_uncompressed_size = not tagset.show_uncompressed_size
+	    tagset:reset_descriptions()
 	 -- Navigation
-	 if char == 'KEY_RIGHT' then
+	 elseif char == 'KEY_RIGHT' then
 	    while current_category < #categories_sorted do
 	       select_category(current_category+1)
 	       if #package_list > 0 then

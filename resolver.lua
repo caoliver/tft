@@ -138,7 +138,7 @@ function read_archive(archive_file, myprint, mygetch)
 	 ['/usr/lib']=true, ['/usr/lib64']=true
       }
       local decompose_archive_name =
-	 '([^/]+)/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+.txz$'
+	 '([^/]+)/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+%.t.z$'
 
       local archivesum = util.xxhsum_file(archive_file)
       if self.archivesums[archivesum] then
@@ -234,8 +234,8 @@ end
 
 
 function read_manifest(archive_directory)
-   local txzpat = '^||   Package:  '..
-      '%./([^/]+)/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+).txz'
+   local archpat = '^||   Package:  '..
+      '%./([^/]+)/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+)%.t.z'
    local eoh = '++========================================'
    local associations = {}
    local input = io.popen('bzcat '..archive_directory..'/MANIFEST.bz2')
@@ -243,7 +243,7 @@ function read_manifest(archive_directory)
    local category, package, version, arch, build
    for line in input:lines() do
       if state == 0 then
-	 category, package, version, arch, build = line:match(txzpat)
+	 category, package, version, arch, build = line:match(archpat)
 	 if category then state = 1 end
       elseif state == 1 then
 	 state = 2

@@ -316,18 +316,6 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
-   local function preserve_state(self, filename)
-      local destination, err = io.open(filename, 'w')
-      assert(destination, err)
-      local shallow_copy = {}
-      for k,v in pairs(self) do shallow_copy[k] = v end
-      shallow_copy.manifest=nil
-      shallow_copy.package_cache=nil
-      shallow_copy.packages_loaded={}
-      destination:write(marshal.encode(shallow_copy))
-      destination:close()
-   end
-
    local function missing(self, installation)
       if installation.type ~= 'installation' then
 	 print 'Argument must be an installation'
@@ -445,24 +433,93 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
-   local function make_description(descr_file)
-      local descr_lines
-      return function ()
-	 if not descr_lines then
-	    local descr_file = io.open(descr_file)
-	    if (descr_file) then
-	       descr_lines = {}
-	       for line in descr_file:lines() do
-		  table.insert(descr_lines, line:match '^[^:]*: ?(.*)$')
-	       end
-	       descr_file:close()
-	       while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
-		  table.remove(descr_lines)
+   local make_description
+   do
+      local get_package_size = 'stat -c "%%s" %s |numfmt --to=iec'
+      local get_uncompressed_size =
+	 '%s %s | dd of=/dev/null |& tail -n 1 | cut -f 1 -d " " | '..
+	 'numfmt --to=iec'
+      local uncompressors = { g='zcat', b='bzcat', l='lzcat', x='xzcat' }
+      function make_description(self, descr_file)
+	 local descr_lines
+	 return function ()
+	    local package_file = descr_file:gsub('txt$', 't?z')
+	    if not descr_lines then
+	       local descr_file = io.open(descr_file)
+	       if (descr_file) then
+		  descr_lines = {}
+		  for line in descr_file:lines() do
+		     table.insert(descr_lines, line:match '^[^:]*: ?(.*)$')
+		  end
+		  while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
+		     table.remove(descr_lines)
+		  end
+		  descr_file:close()
+		  local proc =
+		     io.popen(get_package_size:format(package_file))
+		  local uncompress
+		  if proc then
+		     local sizes=''
+		     sizes='Compressed size: '..(proc:read '*l' or 'UNKNOWN')
+		     proc:close()
+		     if self.show_uncompressed_size then
+			proc = io.popen('ls '..package_file)
+			if proc then
+			   local line = proc:read '*l'
+			   assert(line and #line > 0, 'No archive for '..
+				     package_file)
+			   proc:close()
+			   uncompress = uncompressors[line:match '(.).$']
+			end
+			assert(uncompress,
+			       "No uncompressor for "..package_file)
+			proc =
+			   io.popen(get_uncompressed_size:format(uncompress,
+								 package_file))
+			if proc then
+			   sizes=sizes..'  Uncompressed size: '..
+			      (proc:read '*l' or 'UNKNOWN')
+			   proc:close()
+			end
+		     end
+		     table.insert(descr_lines, '')
+		     table.insert(descr_lines, sizes)
+		  end
 	       end
 	    end
+	    return descr_lines
 	 end
-	 return descr_lines
       end
+   end
+
+   local function reset_descriptions(self)
+      if not self.directory then return end
+      local directory = cleanuppath(self.directory)
+      local txtfiles_pipe =
+	 io.popen('find '..directory..' -name \\*.txt')
+      for descr_file in txtfiles_pipe:lines() do
+	 local tag = descr_file:match '/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+.txt$'
+	 if not self.tags[tag] then
+	    print('No tagfile record for '..tag..'.  Skipping!')
+	 else
+	    self.tags[tag].description =
+	       make_description(self, descr_file)
+	 end
+      end
+      txtfiles_pipe:close()
+   end
+
+   local function preserve_state(self, filename)
+      local destination, err = io.open(filename, 'w')
+      assert(destination, err)
+      local shallow_copy = {}
+      for k,v in pairs(self) do shallow_copy[k] = v end
+      shallow_copy.manifest=nil
+      shallow_copy.package_cache=nil
+      shallow_copy.packages_loaded={}
+      reset_descriptions(self)
+      destination:write(marshal.encode(shallow_copy))
+      destination:close()
    end
 
    local function change_archive(self, directory)
@@ -491,7 +548,8 @@ function read_tagset(tagset_directory, skip_kde)
 	    self.tags[tag].version = version
 	    self.tags[tag].arch = arch
 	    self.tags[tag].build = build
-	    self.tags[tag].description = make_description(descr_file)
+	    self.tags[tag].description =
+	       make_description(self, descr_file)
 	 end
       end
       txtfiles_pipe:close()
@@ -562,11 +620,11 @@ function read_tagset(tagset_directory, skip_kde)
 	 tags = {}, categories = {}, directory = self.directory,
 	 category_description = self.category_description,
 	 skip_kde = skip_kde,
-	 write = write_tagset, preserve = preserve_state, show=show_like,
-	 change_archive = change_archive, forget=forget_changes,
+	 write=write_tagset, preserve=preserve_state, show=show_like,
+	 change_archive=change_archive, forget=forget_changes,
 	 set=set_state, like=like, describe=describe, compare=compare,
-	 copy_states = copy_states, missing=missing, clone=clone, edit=edit,
-	 change_archive = change_archive, type=type }
+	 copy_states=copy_states, missing=missing, clone=clone, edit=edit,
+	 reset_descriptions=reset_descriptions, type='tagset' }
       for category,tags in pairs(self.categories) do
 	 local taglist = {}
 	 newset.categories[category] = taglist
@@ -590,8 +648,9 @@ function read_tagset(tagset_directory, skip_kde)
       skip_kde = skip_kde,
       write = write_tagset, preserve = preserve_state, show=show_like,
       change_archive=change_archive, forget=forget_changes,
-      set=set_state, like=like, describe=describe, copy_states = copy_states,
-      compare=compare, missing=missing, clone=clone, edit=edit }
+      set=set_state, like=like, describe=describe, copy_states=copy_states,
+      compare=compare, missing=missing, clone=clone, edit=edit,
+      reset_descriptions=reset_descriptions }
    local category_pipe = io.popen('find '..tagset_directory..
 				     ' -mindepth 1 -maxdepth 1 -type d')
    for category_directory in category_pipe:lines() do
