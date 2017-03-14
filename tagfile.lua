@@ -319,7 +319,12 @@ function read_tagset(tagset_directory, skip_kde)
    local function preserve_state(self, filename)
       local destination, err = io.open(filename, 'w')
       assert(destination, err)
-      destination:write(marshal.encode(self))
+      local shallow_copy = {}
+      for k,v in pairs(self) do shallow_copy[k] = v end
+      shallow_copy.manifest=nil
+      shallow_copy.package_cache=nil
+      shallow_copy.packages_loaded={}
+      destination:write(marshal.encode(shallow_copy))
       destination:close()
    end
 
