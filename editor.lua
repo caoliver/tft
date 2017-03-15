@@ -97,6 +97,22 @@ function edit_tagset(tagset, installation)
       current_category = 1
       package_cursor = 1
    end
+   local skip_set = tagset.skip_set
+   if skip_set and skip_set[categories_sorted[current_category]] then
+      current_category = nil
+      for i,catname in ipairs(categories_sorted) do
+	 if not skip_set[catname] then
+	    current_category = i
+	    break
+	 end
+      end
+      if not current_category then
+	 print 'All categories inhibited.  Goodbye!'
+	 return
+      end
+      last_package = tagset.categories[categories_sorted[current_category]]
+      package_cursor = 1
+   end
    local package_list = tagset.categories[categories_sorted[current_category]]
    if not tagset.maxtaglen then
       local maxtaglen = 0
@@ -122,7 +138,6 @@ function edit_tagset(tagset, installation)
    local special_window
    local rows, cols, subwin_lines, half_subwin
    local installed = installation and installation.tags or {}
-   local skip_kde = tagset.skip_kde
 
    local function activate_reportview()
       reportview_lines = { '' }
@@ -369,8 +384,9 @@ function edit_tagset(tagset, installation)
 	 draw_package(tuple, i, package_cursor == selected)
       end
       if #package_list == 0 then
-	 l.move(package_window, half_subwin, cols/2 - 8)
-	 l.addstr(package_window, "* NO PACKAGES *")
+	 local msg = "* NO PACKAGES *"
+	 l.move(package_window, half_subwin, cols/2 - #msg/2)
+	 l.addstr(package_window, msg)
       end
       show_constraint()
       l.noutrefresh(package_window)
@@ -424,38 +440,28 @@ function edit_tagset(tagset, installation)
       end
    end
 
-   local function filter_kde(package_list)
-      local newlist = {}
-      for _,tuple in ipairs(package_list) do
-	 if tuple.category:sub(1,3) ~= 'kde' then
-	    table.insert(newlist, tuple)
-	 end
-      end
-      return newlist
-   end
-
    -- Constraint stuff
    local function clear_constraint()
       if current_constraint then
-	 assert(last_package, "last_package not assigned")
 	 current_constraint = nil
 	 constraint_flags = {}
 	 constraint_flags_set = 0
 	 constraint_bits = 0
-	 get_constraint_flag_string() -- Cached status string may be invalid
+	 -- Cached status string may be invalid, so refresh it.
+	 get_constraint_flag_string()
 	 if #package_list > 0 then
 	    last_package = package_list[package_cursor]
+	 else
+	    assert(last_package, "last_package not assigned")
 	 end
 	 current_category = category_index[last_package.category]
 	 package_cursor = last_package.category_index
 	 package_list = tagset.categories[last_package.category]
-	 if skip_kde then package_list = filter_kde(package_list) end
-	 repaint()
       end
    end
 
    local function match_constraint(tuple, constraint)
-      if skip_kde and tuple.category:sub(1,3) == 'kde' then return end
+      if skip_set and skip_set[tuple.category] then return end
       if bit.band(constraint_bits, constraint_special_flags.REQ) ~= 0
       and not tuple.required then return end
       if bit.band(constraint_bits, constraint_special_flags.CHG) ~= 0
@@ -522,19 +528,33 @@ function edit_tagset(tagset, installation)
       constrain(current_constraint or '', current_constraint)
    end
 
-   local function select_category(new_category)
-      if current_constraint then return end
-      local save_package = last_package
-      if #package_list > 0 then
-	 save_package = package_list[package_cursor]
+   local function find_new_category(start, finish)
+      local function select_category(new_category)
+	 local save_package = last_package
+	 if #package_list > 0 then
+	    save_package = package_list[package_cursor]
+	 end
+	 if new_category ~= current_category then
+	    package_cursors[current_category] = save_package.category_index
+	    package_cursor = package_cursors[new_category] or 1
+	    package_list = tagset.categories[categories_sorted[new_category]]
+	    current_category = new_category
+	 end
+	 repaint()
       end
-      if current_constraint then clear_constraint() end
-      if new_category ~= current_category then
-	 package_cursors[current_category] = save_package.category_index
-	 package_cursor = package_cursors[new_category] or 1
-	 package_list = tagset.categories[categories_sorted[new_category]]
-	 if skip_kde then package_list = filter_kde(package_list) end
-	 current_category = new_category
+
+      clear_constraint()
+      if not categories_sorted[start] then return end
+      if not skip_set then
+	 select_category(start)
+      else
+	 local bump = start < finish and 1 or -1
+	 for new_category=start,finish,bump do
+	    if not skip_set[categories_sorted[new_category]] then
+	       select_category(new_category)
+	       break
+	    end
+	 end
       end
    end
 
@@ -698,27 +718,13 @@ function edit_tagset(tagset, installation)
 	    tagset:reset_descriptions()
 	 -- Navigation
 	 elseif char == 'KEY_RIGHT' then
-	    while current_category < #categories_sorted do
-	       select_category(current_category+1)
-	       if #package_list > 0 then
-		  repaint()
-		  break
-	       end
-	    end
+	    find_new_category(current_category+1, #categories_sorted)
 	 elseif char == 'KEY_LEFT' then
-	    while current_category > 1 do
-	       select_category(current_category-1)
-	       if #package_list > 0 then
-		  repaint()
-		  break
-	       end
-	    end
+	    find_new_category(current_category-1, 1)
 	 elseif char == '<' then
-	    select_category(1)
-	    repaint()
+	    find_new_category(1,#categories_sorted)
 	 elseif char == '>' then
-	    select_category(#categories_sorted)
-	    repaint()
+	    find_new_category(#categories_sorted, 1)
 	 elseif char == 'KEY_HOME' then
 	    if reportview_lines then
 	       reportview_head = 1

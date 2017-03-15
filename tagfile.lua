@@ -185,7 +185,7 @@ local function get_instance(directory)
    return new_instance
 end
 
-function read_tagset(tagset_directory, skip_kde)
+function read_tagset(tagset_directory)
    local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
 
    tagset_directory = cleanuppath(tagset_directory)
@@ -267,10 +267,12 @@ function read_tagset(tagset_directory, skip_kde)
 	 for i=1,maxverlen+maxpkglen+34 do io.write '-' end
 	 io.write '\n'
 	 for _,match in ipairs(matches) do
-	    print(format:format(match.category, match.tag,
-				match.state..
-				   (match.state ~= match.old_state and '*' or ''),
-				match.version, match.arch, match.build))
+	    if not (self.skip_set and self.skip_set[match.category]) then
+	       local modified = match.state ~= match.old_state and '*' or ''
+	       print(format:format(match.category, match.tag,
+				   match.state..modified,
+				   match.version, match.arch, match.build))
+	    end
 	 end
       else
 	 for _,tuple in ipairs(matches) do
@@ -357,8 +359,8 @@ function read_tagset(tagset_directory, skip_kde)
 		  return false
 	       end
 	    end
-	    if skip_kde and (a and a.category and a.category:match '^kde' or
-			     b and b.category and b.category:match '^kde') then
+	    if skip_set and (a and a.category and skip_set[a.category] or
+			     b and b.category and skip_set[b.category]) then
 	       return false
 	    end
 	    if show_optional then return true end
@@ -620,16 +622,29 @@ function read_tagset(tagset_directory, skip_kde)
       end
    end
 
+   local function skip(self, set)
+      if not set then
+	 self.skip_set = nil
+      else
+	 assert(not set or type(set) == 'table')
+	 self.skip_set = {}
+	 for _,category in ipairs(set or {}) do
+	    assert(self.categories[category],
+		   'Not a valid category: '..tostring(category))
+	    self.skip_set[category] = true
+	 end
+      end
+   end
+
    local function clone(self)
       local newset = {
 	 tags = {}, categories = {}, directory = self.directory,
 	 category_description = self.category_description,
-	 skip_kde = skip_kde,
 	 write=write_tagset, preserve=preserve_state, show=show_like,
 	 change_archive=change_archive, forget=forget_changes,
 	 set=set_state, like=like, describe=describe, compare=compare,
 	 copy_states=copy_states, missing=missing, clone=clone, edit=edit,
-	 reset_descriptions=reset_descriptions, type='tagset' }
+	 reset_descriptions=reset_descriptions, skip=skip, type='tagset' }
       for category,tags in pairs(self.categories) do
 	 local taglist = {}
 	 newset.categories[category] = taglist
@@ -650,12 +665,11 @@ function read_tagset(tagset_directory, skip_kde)
    local tagset = {
       type = 'tagset', tags = {}, categories = {},
       directory = tagset_directory, category_description = {},
-      skip_kde = skip_kde,
-      write = write_tagset, preserve = preserve_state, show=show_like,
+      write=write_tagset, preserve=preserve_state, show=show_like,
       change_archive=change_archive, forget=forget_changes,
       set=set_state, like=like, describe=describe, copy_states=copy_states,
       compare=compare, missing=missing, clone=clone, edit=edit,
-      reset_descriptions=reset_descriptions }
+      reset_descriptions=reset_descriptions, skip=skip }
    local category_pipe = io.popen('find '..tagset_directory..
 				     ' -mindepth 1 -maxdepth 1 -type d')
    for category_directory in category_pipe:lines() do
