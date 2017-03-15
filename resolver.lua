@@ -240,10 +240,10 @@ function read_manifest(archive_directory)
    local associations = {}
    local input = io.popen('bzcat '..archive_directory..'/MANIFEST.bz2')
    local state = 0
-   local category, package, version, arch, build
+   local category, tag, version, arch, build
    for line in input:lines() do
       if state == 0 then
-	 category, package, version, arch, build = line:match(archpat)
+	 category, tag, version, arch, build = line:match(archpat)
 	 if category then state = 1 end
       elseif state == 1 then
 	 state = 2
@@ -267,7 +267,7 @@ function read_manifest(archive_directory)
 		  assoc = {}
 		  associations[stem] = assoc
 	       end
-	       table.insert(assoc, {file,package})
+	       table.insert(assoc, {file,tag})
 	    end
 	 end
       end

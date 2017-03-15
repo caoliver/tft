@@ -1,4 +1,6 @@
 --[[
+-- Simple debug output to other screen when ncurses is active.
+
 function opendebug(ptsnum)
    if debugout then debugout:close() end
    debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
@@ -393,11 +395,17 @@ function edit_tagset(tagset, installation)
    end
 
    local function show_description(description)
-      local descr_lines = description and description() or {}
+      local descr_lines = description and description()
       activate_reportview()
-      for i, line in ipairs(descr_lines) do
-	 if i > 1 then add_to_reportview() end
-	 add_to_reportview(line)
+      add_to_reportview(tostring(description))
+      add_to_reportview()
+      if descr_lines then
+	 for i, line in ipairs(descr_lines) do
+	    if i > 1 then add_to_reportview() end
+	    add_to_reportview(line)
+	 end
+      else
+	 add_to_reportview('Sorry!  I can\'t find this description.')
       end
    end
    
@@ -543,7 +551,6 @@ function edit_tagset(tagset, installation)
 	 repaint()
       end
 
-      clear_constraint()
       if not categories_sorted[start] then return end
       if not skip_set then
 	 select_category(start)
@@ -718,12 +725,16 @@ function edit_tagset(tagset, installation)
 	    tagset:reset_descriptions()
 	 -- Navigation
 	 elseif char == 'KEY_RIGHT' then
+	    clear_constraint()
 	    find_new_category(current_category+1, #categories_sorted)
 	 elseif char == 'KEY_LEFT' then
+	    clear_constraint()
 	    find_new_category(current_category-1, 1)
 	 elseif char == '<' then
+	    clear_constraint()
 	    find_new_category(1,#categories_sorted)
 	 elseif char == '>' then
+	    clear_constraint()
 	    find_new_category(#categories_sorted, 1)
 	 elseif char == 'KEY_HOME' then
 	    if reportview_lines then

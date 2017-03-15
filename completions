@@ -6,6 +6,7 @@ describe
 edit
 extend
 forget
+installation
 missing
 preserve
 read_archive

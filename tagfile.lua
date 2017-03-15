@@ -1,5 +1,8 @@
 #!/usr/local/bin/lua
 
+local file_extension='.slktag'
+local file_pattern='%'..file_extension..'$'
+
 local function case_insensitive_less_than(a,b)
    return string.lower(a) < string.lower(b)
 end
@@ -81,11 +84,11 @@ function read_installation(prefix)
       return true
    end
 
-   local function make_description(package, tag)
+   local function make_description(descr_file, tag)
       local descr_lines
       return function()
 	 if not descr_lines then
-	    local descr_file = io.open(package)
+	    local descr_file = io.open(descr_file)
 	    if descr_file then
 	       local reading_descr
 	       local descr_match = '^'..tag..':(.*)'
@@ -153,14 +156,20 @@ function read_installation(prefix)
       end
    end
 
-    local installed = { type = 'installation',
+   local function reset_descriptions(self)
+      for tag, package_entry in pairs(self.tags) do
+	 package_entry.description = make_description(package_entry.path, tag)
+      end
+   end
+
+   local installed = { type = 'installation',
 		       show=show_like, like = like, tags={},
 		       describe = describe, compare=compare,
-		       missing=missing }
+		       missing=missing, reset_descriptions=reset_descriptions }
    local find = io.popen('find '..directory..' -type f')
-   for package in find:lines() do
+   for package_file in find:lines() do
       local tag,version,arch,build =
-	 package:match '/([^/]+)%-([^-]+)%-([^-]+)%-([^-]+)$'
+	 package_file:match '/([^/]+)%-([^-]+)%-([^-]+)%-([^-]+)$'
       if tag then
 	 local descr_lines
 
@@ -168,7 +177,9 @@ function read_installation(prefix)
 				 version = version,
 				 arch = arch,
 				 build = build,
-				 description = make_description(package, tag) }
+				 path = package_file,
+				 description =
+				    make_description(package_file, tag) }
       end
    end
    find:close()
@@ -446,6 +457,14 @@ function read_tagset(tagset_directory)
 	 local descr_lines
 	 return function ()
 	    local package_file = descr_file:gsub('txt$', 't?z')
+	    local line
+	    local proc = io.popen('ls '..package_file)
+	    package_file = nil
+	    if proc then
+	       line = proc:read '*l'
+	       if line and #line > 0 then package_file = line end
+	       proc:close()
+	    end
 	    if not descr_lines then
 	       local descr_file = io.open(descr_file)
 	       if (descr_file) then
@@ -457,24 +476,25 @@ function read_tagset(tagset_directory)
 		     table.remove(descr_lines)
 		  end
 		  descr_file:close()
-		  local proc =
-		     io.popen(get_package_size:format(package_file))
+		  if not package_file then
+		     insert.table(descr_lines, '* PACKAGE FILE MISSING *')
+		     goto bailout
+		  end
+		  proc = io.popen(get_package_size:format(package_file))
 		  local uncompress
 		  if proc then
 		     local sizes=''
-		     sizes='Compressed size: '..(proc:read '*l' or 'UNKNOWN')
+		     sizes='Compressed size: '..
+			(proc:read '*l' or 'UNKNOWN')
 		     proc:close()
 		     if self.show_uncompressed_size then
-			proc = io.popen('ls '..package_file)
-			if proc then
-			   local line = proc:read '*l'
-			   assert(line and #line > 0, 'No archive for '..
-				     package_file)
-			   proc:close()
-			   uncompress = uncompressors[line:match '(.).$']
+			local uncompress =
+			   uncompressors[package_file:match '(.).$']
+			if not uncompress then
+			   insert.table(descr_lines,
+					"No uncompressor for "..package_file)
+			   goto bailout
 			end
-			assert(uncompress,
-			       "No uncompressor for "..package_file)
 			proc =
 			   io.popen(get_uncompressed_size:format(uncompress,
 								 package_file))
@@ -489,6 +509,7 @@ function read_tagset(tagset_directory)
 		  end
 	       end
 	    end
+	    ::bailout::
 	    return descr_lines
 	 end
       end
@@ -512,14 +533,20 @@ function read_tagset(tagset_directory)
    end
 
    local function preserve_state(self, filename)
-      local destination, err = io.open(filename, 'w')
-      assert(destination, err)
+      if not filename:match(file_pattern) then
+	 filename=filename..file_extension
+      end
+      local destination, err = io.popen('xz -1 >'..filename, 'w')
+      if not destination then print(err); return end
       local shallow_copy = {}
       for k,v in pairs(self) do shallow_copy[k] = v end
       shallow_copy.manifest=nil
       shallow_copy.package_cache=nil
       shallow_copy.packages_loaded={}
       reset_descriptions(self)
+      if self.installation then
+	 self.installation:reset_descriptions()
+      end
       -- Temporarily take the tagset list out of scope, otherwise
       -- it winds up in the serialization.
       local stash=tagset_list
@@ -607,7 +634,10 @@ function read_tagset(tagset_directory)
    end
 
    local function copy_states(self, source, silent)
-      assert(source.type == 'tagset', 'Source isn\'t a tagset')
+      if source.type ~= 'tagset' then
+	 print 'Source isn\'t a tagset'
+	 return
+      end
       for tag, tuple in pairs(self.tags) do
 	 local source_tuple = source.tags[tag]
 	 if source_tuple then
@@ -626,13 +656,19 @@ function read_tagset(tagset_directory)
       if not set then
 	 self.skip_set = nil
       else
-	 assert(not set or type(set) == 'table')
-	 self.skip_set = {}
-	 for _,category in ipairs(set or {}) do
-	    assert(self.categories[category],
-		   'Not a valid category: '..tostring(category))
-	    self.skip_set[category] = true
+	 if type(set) ~= 'table' then
+	    print('Skip set must be a table or nil/false')
+	    return
 	 end
+	 local new_skip_set = {}
+	 for _,category in ipairs(set or {}) do
+	    if not self.categories[category] then
+	       print('Not a valid category: '..tostring(category))
+	       return
+	    end
+	    new_skip_set[category] = true
+	 end
+	 self.skip_set = new_skip_set
       end
    end
 
@@ -711,9 +747,10 @@ end
 
 
 function reconstitute(filename)
-   local source, err = io.open(filename)
-   assert(source, err)
+   local source, err = io.popen('xzcat <'..filename)
+   if not (source) then print(err); return end
    local tagset = marshal.decode(source:read '*a')
+   source:close()
    tagset_list[tagset] = true
    tagset.instance = get_instance(tagset.directory)
    return tagset
