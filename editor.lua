@@ -29,7 +29,7 @@ local a = l.attributes
 local b = l.boxes
 local k = l.keys
 local state_signs = { SKP='-', ADD='+', OPT='o', REC=' ' }
-local excluded_char = make_char_bool '[]<>/ '
+local excluded_char = make_char_bool '[]<>? '
 local escapemap = {
    a='M-a', o='M-o', r='M-r', R='M-R', s='M-s', C='M-C', M='M-M',
    l='M-l', L='M-L', x='M-x', n='M-n', N='M-N', ['\14']='M-^N',
