@@ -3,6 +3,7 @@ clone
 compare
 copy_states
 describe
+edit
 extend
 forget
 missing
@@ -12,5 +13,9 @@ read_installation
 read_manifest
 read_tagset
 reconstitute
+reset_descriptions
 show
+skip
+skip_set
+show_uncompressed_sizes
 write
