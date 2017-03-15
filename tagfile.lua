@@ -518,7 +518,12 @@ function read_tagset(tagset_directory, skip_kde)
       shallow_copy.package_cache=nil
       shallow_copy.packages_loaded={}
       reset_descriptions(self)
+      -- Temporarily take the tagset list out of scope, otherwise
+      -- it winds up in the serialization.
+      local stash=tagset_list
+      tagset_list=nil
       destination:write(marshal.encode(shallow_copy))
+      tagset_list=stash
       destination:close()
    end
 
