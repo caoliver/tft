@@ -1,0 +1,18 @@
+#!/usr/bin/env lua
+
+l=require 'ljcurses'
+l.init_curses()
+local key,rest
+l.timeout(1000000)
+repeat
+   l.move(0,0)
+   key,rest = l.getch()
+   l.addstr(l.keyname(key)..' '..(rest or ''))
+   l.clrtoeol()
+until key==32
+   
+l.endwin()
+
+-- Local Variables:
+-- mode: lua
+-- End:
