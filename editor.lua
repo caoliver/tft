@@ -681,6 +681,28 @@ function edit_tagset(tagset, installation)
       repaint()
    end
 
+   local function find_next_or_prev_opt_or_rec(finish,direction)
+      for cursor=package_cursor+direction,finish,direction do
+	 if package_list[cursor].state ~= 'ADD'
+	 and package_list[cursor].state ~= 'SKP' then
+	    if cursor < viewport_top
+	    or cursor >= viewport_top + subwin_lines then
+	       package_cursor=cursor
+	       repaint()
+	    else
+	       draw_package(package_list[package_cursor],
+			    package_cursor-viewport_top, false)
+	       draw_package(package_list[cursor],
+			    cursor-viewport_top, true)
+	       package_cursor = cursor
+	       show_constraint()
+	       l.noutrefresh(package_window)
+	    end
+	    return
+	 end
+      end
+   end
+
    local function command_loop()
       repaint()
       -- If a timeout isn't given at first, then SIGINT isn't
@@ -800,6 +822,10 @@ function edit_tagset(tagset, installation)
 		  l.noutrefresh(package_window)
 	       end
 	    end
+	 elseif key == k.ctrl_i then
+	    find_next_or_prev_opt_or_rec(#package_list, 1)
+	 elseif char == 'KEY_BTAB' then
+	    find_next_or_prev_opt_or_rec(1, -1)
 	 elseif char == 'KEY_NPAGE' then
 	    if reportview_lines then
 	       local maxhead = #reportview_lines - subwin_lines + 1
