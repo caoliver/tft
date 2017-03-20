@@ -140,6 +140,7 @@ function edit_tagset(tagset, installation)
    local special_window
    local rows, cols, subwin_lines, half_subwin
    local installed = installation and installation.tags or {}
+   local pattern_trap
 
    local function activate_reportview()
       reportview_lines = { '' }
@@ -480,8 +481,13 @@ function edit_tagset(tagset, installation)
       if constraint_flags_set > 0 and not constraint_flags[tuple.state] then
 	 return
       end
-      -- Case insensitive match
-      return tuple.tag:lower():find(constraint:lower())
+      -- Case insensitive match with bad pattern trap
+      do
+	 pattern_trap = true
+	 local success = tuple.tag:lower():find(constraint:lower())
+	 pattern_trap = nil
+	 return success
+      end
    end
    
    local function constrain(constraint, old_constraint)
@@ -495,21 +501,22 @@ function edit_tagset(tagset, installation)
       current_constraint = constraint
       local new_cursor = 1
       package_list = {}
-      if pcall(string.find, '', constraint) then
-	 local insert_number=1
-	 for _, category in ipairs(categories_sorted) do
-	    local cat = tagset.categories[category]
-	    for _, tuple in ipairs(cat) do
-	       if  match_constraint(tuple,constraint) then
-		  table.insert(package_list, tuple)
-		  if tuple == last_package then
-		     new_cursor = insert_number
+      local success,msg = pcall(function ()
+	    local insert_number=1
+	    for _, category in ipairs(categories_sorted) do
+	       local cat = tagset.categories[category]
+	       for _, tuple in ipairs(cat) do
+		  if  match_constraint(tuple,constraint) then
+		     table.insert(package_list, tuple)
+		     if tuple == last_package then
+			new_cursor = insert_number
+		     end
+		     insert_number = insert_number+1
 		  end
-		  insert_number = insert_number+1
 	       end
 	    end
-	 end
-      end
+      end)
+      if not success then assert(pattern_trap, 'pcall failed\n'..msg) end
       if #package_list > 0 then
 	 new_package = package_list[new_cursor]
 	 if new_package.category ~= last_package.category then
