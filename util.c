@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <time.h>
 #include "lua_head.h"
+#include <errno.h>
+#include <glob.h>
 
 uint64_t xxhfd(int fd, uint64_t seed);
 
@@ -52,6 +54,34 @@ LUAFN(usleep)
     return 0;
 }
 
+LUAFN(glob)
+{
+    glob_t resultglob;
+    const char *pattern = lua_tostring(L, 1);
+    int rc;
+
+
+    rc = glob(pattern, GLOB_ERR, NULL, &resultglob);
+    if (rc != 0 && rc != GLOB_NOMATCH) {
+        lua_pushnil(L);
+        lua_pushinteger(L, rc == GLOB_NOSPACE ? ENOMEM : errno);
+        return 2;
+    }
+
+    lua_newtable(L);
+    if (rc == 0)
+    {
+	int i = 0;
+	while (i < resultglob.gl_pathc) {
+	    lua_pushstring(L, resultglob.gl_pathv[i++]);
+	    lua_rawseti(L, -2, i);
+	}
+	globfree(&resultglob);
+    }
+    return 1;
+}
+
+
 LUAFN(xxhsum_file)
 {
     int fd;
@@ -84,6 +114,7 @@ LUALIB_API int luaopen_util(lua_State *L)
 	FN_ENTRY(realtime),
 	FN_ENTRY(cputime),
 	FN_ENTRY(usleep),
+	FN_ENTRY(glob),
 	FN_ENTRY(xxhsum_file),
 	FN_ENTRY(lib_exists),
 	{ NULL, NULL }

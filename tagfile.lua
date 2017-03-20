@@ -166,8 +166,7 @@ function read_installation(prefix)
 		       show=show_like, like = like, tags={},
 		       describe = describe, compare=compare,
 		       missing=missing, reset_descriptions=reset_descriptions }
-   local find = io.popen('find '..directory..' -type f')
-   for package_file in find:lines() do
+   for _,package_file in ipairs(util.glob(directory..'/*')) do
       local tag,version,arch,build =
 	 package_file:match '/([^/]+)%-([^-]+)%-([^-]+)%-([^-]+)$'
       if tag then
@@ -182,7 +181,6 @@ function read_installation(prefix)
 				    make_description(package_file, tag) }
       end
    end
-   find:close()
    return installed
 end
 
@@ -458,12 +456,12 @@ function read_tagset(tagset_directory)
 	 return function ()
 	    local package_file = descr_file:gsub('txt$', 't?z')
 	    local line
-	    local proc = io.popen('ls '..package_file)
-	    package_file = nil
-	    if proc then
-	       line = proc:read '*l'
-	       if line and #line > 0 then package_file = line end
-	       proc:close()
+	    do
+	       local package_files = util.glob(package_file)
+	       package_file = nil
+	       if package_files and #package_files == 1 then
+		  package_file = package_files[1]
+	       end
 	    end
 	    if not descr_lines then
 	       local descr_file = io.open(descr_file)
@@ -518,9 +516,7 @@ function read_tagset(tagset_directory)
    local function reset_descriptions(self)
       if not self.directory then return end
       local directory = cleanuppath(self.directory)
-      local txtfiles_pipe =
-	 io.popen('find '..directory..' -name \\*.txt')
-      for descr_file in txtfiles_pipe:lines() do
+      for _, descr_file in ipairs(util.glob(directory..'/*/*txt')) do
 	 local tag = descr_file:match '/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+.txt$'
 	 if not self.tags[tag] then
 	    print('No tagfile record for '..tag..'.  Skipping!')
@@ -529,7 +525,6 @@ function read_tagset(tagset_directory)
 	       make_description(self, descr_file)
 	 end
       end
-      txtfiles_pipe:close()
    end
 
    local function preserve_state(self, filename)
@@ -571,9 +566,7 @@ function read_tagset(tagset_directory)
       self.packages_loaded = nil
       if not directory then return end
       directory = cleanuppath(directory)
-      local txtfiles_pipe =
-	 io.popen('find '..directory..' -name \\*.txt')
-      for descr_file in txtfiles_pipe:lines() do
+      for _,descr_file in ipairs(util.glob(directory..'/*/*txt')) do
 	 local tag,version,arch,build =
 	    descr_file:match '/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+).txt$'
 	 if not self.tags[tag] then
@@ -586,10 +579,8 @@ function read_tagset(tagset_directory)
 	       make_description(self, descr_file)
 	 end
       end
-      txtfiles_pipe:close()
 
-      local maketags = io.popen('ls '..directory..'/*/maketag 2>/dev/null')
-      for line in maketags:lines() do
+      for _,line in ipairs(util.glob(directory..'/*/maketag')) do
 	 local maketag = io.open(line)
 	 if maketag then
 	    local gotdata
@@ -613,7 +604,6 @@ function read_tagset(tagset_directory)
 		  end
 	       end
 	    end
-	    maketag:close()
 	 end
       end
 
@@ -706,9 +696,9 @@ function read_tagset(tagset_directory)
       set=set_state, like=like, describe=describe, copy_states=copy_states,
       compare=compare, missing=missing, clone=clone, edit=edit,
       reset_descriptions=reset_descriptions, skip=skip }
-   local category_pipe = io.popen('find '..tagset_directory..
-				     ' -mindepth 1 -maxdepth 1 -type d')
-   for category_directory in category_pipe:lines() do
+   for _, category_tagfile in
+   ipairs(util.glob(tagset_directory..'/*/tagfile')) do
+      category_directory = category_tagfile:match '^(/.*)/[^/]*$'
       local category = category_directory:match '([^/]*)$'
       local tagfile = io.open(category_directory..'/tagfile')
       if not tagfile then
@@ -738,7 +728,6 @@ function read_tagset(tagset_directory)
    -- Now try to enumerate txt files for packages.  If this is
    -- just a tagset directory, then there will be none.
    change_archive(tagset, tagset_directory)
-   category_pipe:close()
    tagset_list_changed= true
    tagset_list[tagset] = true
    tagset.instance = get_instance(tagset_directory)

@@ -137,6 +137,14 @@ function read_archive(archive_file, myprint, mygetch)
 	 ['/lib']=true, ['/lib64']=true,
 	 ['/usr/lib']=true, ['/usr/lib64']=true
       }
+      do
+	 local matches=util.glob(archive_file..'.t?z')
+	 if not matches or #matches ~= 1 then
+	    myprint('Can\'t find archive for '..archive_file)
+	    return
+	 end
+	 archive_file = matches[1]
+      end
       local decompose_archive_name =
 	 '([^/]+)/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+%.t.z$'
 
