@@ -10,11 +10,11 @@ dummy= #_G --[[
 #--]]
 dummy=nil
 local origin=(arg and (arg[0]:match '^(.*)/') or '.')
-util=package.loadlib(origin..'/util.so', 'luaopen_util')()
-elfutil=package.loadlib(origin..'/elfutil.so', 'luaopen_elfutil')()
+package.loadlib(origin..'/util.so', 'luaopen_util')()
+package.loadlib(origin..'/elfutil.so', 'luaopen_elfutil')()
 marshal=package.loadlib(origin..'/lmarshal.so', 'luaopen_marshal')()
-ljcurses=package.loadlib(origin..'/ljcurses.so', 'luaopen_ljcurses')()
-ljcurses=package.loadlib(origin..'/cpiofns.so', 'luaopen_cpiofns')()
+package.loadlib(origin..'/ljcurses.so', 'luaopen_ljcurses')()
+package.loadlib(origin..'/cpiofns.so', 'luaopen_cpiofns')()
 dofile(origin..'/resolver.lua')
 dofile(origin..'/tagfile.lua')
 dofile(origin..'/editor.lua')
