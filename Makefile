@@ -4,7 +4,7 @@ LDFLAGS+=-lluajit-5.1
 
 .PHONY: all clean
 
-all: ljcurses.so elfutil.so lmarshal.so util.so
+all: ljcurses.so elfutil.so lmarshal.so util.so cpiofns.so
 
 ljcurses.so: ljcurses.o
 	gcc -shared $(LDFLAGS) -lncurses -o $@ $<
@@ -14,6 +14,12 @@ elfutil.so: elfutil.o
 
 util.so: util.o xxhash.o
 	gcc -shared $(LDFLAGS) xxhash.o -o $@ $<
+
+cpiofns.o: cpiofns.c
+	gcc $(CFLAGS) -c -D_POSIX_C_SOURCE=200809L -o $@ $<
+
+cpiofns.so: cpiofns.o
+	gcc -shared $(LDFLAGS) -o $@ $<
 
 %.so: %.o
 	gcc -shared $(LDFLAGS) -o $@ $<

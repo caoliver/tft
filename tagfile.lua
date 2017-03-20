@@ -321,10 +321,37 @@ function read_tagset(tagset_directory)
 	    end
 	 end
 	 tagfile:close()
-	 for _,tuple in pairs(self.tags) do tuple.old_state = tuple.state end
 	 self.dirty = false
-	 self.directory = directory
       end
+      self.directory = directory
+   end
+
+   local function write_cpio(self, cpio_name, NonADD_to_SKP)
+      if not cpio_name:match '%.cpio$' then
+	 cpio_name = cpio_name..'.cpio'
+      end
+      cpio_file = io.open(cpio_name, 'w')
+      if not cpio_file then
+	 print('Can\'t create cpio archive '..cpio_name)
+	 return
+      end
+      cpio_file:write(cpiofns.emit_directory 'tags')
+      for category, tags in pairs(self.categories) do
+	 local tagdir='tags/'..category
+	 cpio_file:write(cpiofns.emit_directory(tagdir))
+	 local contents=''
+	 for _, tuple in ipairs(tags) do
+	    if NonADD_to_SKP and tuple.state ~= 'ADD' then
+	       contents=contents..tuple.tag..':SKP\n'
+	    else
+	       contents=contents..tuple.tag..':'..tuple.state..'\n'
+	    end
+	 end
+	 cpio_file:write(cpiofns.emit_file(tagdir..'/tagfile', contents))
+	 self.dirty = false
+      end
+      cpio_file:write(cpiofns.emit_trailer())
+      cpio_file:close()
    end
 
    local function missing(self, installation)
@@ -548,6 +575,7 @@ function read_tagset(tagset_directory)
       tagset_list=nil
       destination:write(marshal.encode(shallow_copy))
       tagset_list=stash
+      self.dirty = false
       destination:close()
    end
 
@@ -666,7 +694,8 @@ function read_tagset(tagset_directory)
       local newset = {
 	 tags = {}, categories = {}, directory = self.directory,
 	 category_description = self.category_description,
-	 write=write_tagset, preserve=preserve_state, show=show_like,
+	 write=write_tagset, write_cpio=write_cpio,
+	 preserve=preserve_state, show=show_like,
 	 change_archive=change_archive, forget=forget_changes,
 	 set=set_state, like=like, describe=describe, compare=compare,
 	 copy_states=copy_states, missing=missing, clone=clone, edit=edit,
@@ -691,7 +720,8 @@ function read_tagset(tagset_directory)
    local tagset = {
       type = 'tagset', tags = {}, categories = {},
       directory = tagset_directory, category_description = {},
-      write=write_tagset, preserve=preserve_state, show=show_like,
+      write=write_tagset, write_cpio=write_cpio,
+      preserve=preserve_state, show=show_like,
       change_archive=change_archive, forget=forget_changes,
       set=set_state, like=like, describe=describe, copy_states=copy_states,
       compare=compare, missing=missing, clone=clone, edit=edit,

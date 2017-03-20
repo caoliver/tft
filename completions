@@ -20,3 +20,4 @@ skip
 skip_set
 show_uncompressed_sizes
 write
+write_cpio
