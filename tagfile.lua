@@ -298,7 +298,7 @@ function read_tagset(tagset_directory)
       end
    end
 
-   local function write_tagset(self, directory, NonADD_to_SKP)
+   local function write_tagset(self, directory)
       if not directory then print 'No directory given'; return; end
       for category, tags in pairs(self.categories) do
 	 local tagdir = directory..'/'..category
@@ -314,7 +314,7 @@ function read_tagset(tagset_directory)
 	    return
 	 end
 	 for _, tuple in ipairs(tags) do
-	    if NonADD_to_SKP and tuple.state ~= 'ADD' then
+	    if self.skp_if_not_add and tuple.state ~= 'ADD' then
 	       tagfile:write(tuple.tag..':SKP\n')
 	    else
 	       tagfile:write(tuple.tag..':'..tuple.state..'\n')
@@ -326,9 +326,15 @@ function read_tagset(tagset_directory)
       self.directory = directory
    end
 
-   local function write_cpio(self, cpio_name, NonADD_to_SKP)
-      if not cpio_name:match '%.cpio$' then
-	 cpio_name = cpio_name..'.cpio'
+   local function write_cpio(self, cpio_name, omit_trailer)
+      if cpio_name:match '%.cpio%-nt$' then omit_trailer = true
+      else
+	 if not cpio_name:match '%.cpio$' then
+	    cpio_name = cpio_name..'.cpio'
+	 end
+	 if omit_trailer and not cpio_name:match '%-nt$' then
+	    cpio_name = cpio_name..'-nt'
+	 end
       end
       cpio_file = io.open(cpio_name, 'w')
       if not cpio_file then
@@ -341,7 +347,7 @@ function read_tagset(tagset_directory)
 	 cpio_file:write(cpiofns.emit_directory(tagdir))
 	 local contents=''
 	 for _, tuple in ipairs(tags) do
-	    if NonADD_to_SKP and tuple.state ~= 'ADD' then
+	    if self.skp_if_not_add and tuple.state ~= 'ADD' then
 	       contents=contents..tuple.tag..':SKP\n'
 	    else
 	       contents=contents..tuple.tag..':'..tuple.state..'\n'
@@ -350,7 +356,7 @@ function read_tagset(tagset_directory)
 	 cpio_file:write(cpiofns.emit_file(tagdir..'/tagfile', contents))
 	 self.dirty = false
       end
-      cpio_file:write(cpiofns.emit_trailer())
+      if not omit_trailer then cpio_file:write(cpiofns.emit_trailer()) end
       cpio_file:close()
    end
 
@@ -562,9 +568,7 @@ function read_tagset(tagset_directory)
       if not destination then print(err); return end
       local shallow_copy = {}
       for k,v in pairs(self) do shallow_copy[k] = v end
-      shallow_copy.manifest=nil
-      shallow_copy.package_cache=nil
-      shallow_copy.packages_loaded={}
+      trim_editor_cache(shallow_copy)
       reset_descriptions(self)
       if self.installation then
 	 self.installation:reset_descriptions()
@@ -694,6 +698,9 @@ function read_tagset(tagset_directory)
       local newset = {
 	 tags = {}, categories = {}, directory = self.directory,
 	 category_description = self.category_description,
+	 show_uncompressed_size = self.show_uncompressed_size,
+	 skp_if_not_add = self.skp_if_not_add,
+	 skip_set = self.skip_set,
 	 write=write_tagset, write_cpio=write_cpio,
 	 preserve=preserve_state, show=show_like,
 	 change_archive=change_archive, forget=forget_changes,
@@ -714,6 +721,7 @@ function read_tagset(tagset_directory)
       tagset_list[newset] = true
       tagset_list_changed = true
       newset.instance = get_instance(self.directory)
+      clone_editor_cache(newset, self)
       return newset
    end
 

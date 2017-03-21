@@ -62,6 +62,16 @@ local function assert(bool, ...)
    return _G.assert(bool, ...)
 end
 
+function trim_editor_cache(tagset)
+   tagset.manifest = nil
+   tagset.package_cache = nil
+   tagset.packages_loaded = {}
+end
+
+function clone_editor_cache(new_tagset, old_tagset)
+   new_tagset.installation = old_tagset.installation
+end
+
 function edit_tagset(tagset, installation)
    assert(tagset.type == 'tagset', 'Self is not a tagset')
    assert(not installation or installation.type == 'installation',
