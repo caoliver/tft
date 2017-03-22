@@ -560,7 +560,7 @@ function read_tagset(tagset_directory)
       end
    end
 
-   local function preserve_state(self, filename)
+   local function preserve_tagset(self, filename)
       if not filename:match(file_pattern) then
 	 filename=filename..file_extension
       end
@@ -694,7 +694,7 @@ function read_tagset(tagset_directory)
       end
    end
 
-   local function clone(self)
+   local function clone(self, preserve_old_state)
       local newset = {
 	 tags = {}, categories = {}, directory = self.directory,
 	 category_description = self.category_description,
@@ -702,7 +702,7 @@ function read_tagset(tagset_directory)
 	 skp_if_not_add = self.skp_if_not_add,
 	 skip_set = self.skip_set,
 	 write=write_tagset, write_cpio=write_cpio,
-	 preserve=preserve_state, show=show_like,
+	 preserve=preserve_tagset, show=show_like,
 	 change_archive=change_archive, forget=forget_changes,
 	 set=set_state, like=like, describe=describe, compare=compare,
 	 copy_states=copy_states, missing=missing, clone=clone, edit=edit,
@@ -713,7 +713,9 @@ function read_tagset(tagset_directory)
 	 for _, tuple in ipairs(tags) do
 	    local newtuple = {}
 	    for k,v in pairs(tuple) do newtuple[k] = v end
-	    newtuple.old_state = newtuple.state
+	    if not preserve_old_state then
+	       newtuple.old_state = newtuple.state
+	    end
 	    table.insert(taglist, newtuple)
 	    newset.tags[newtuple.tag] = newtuple
 	 end
@@ -729,7 +731,7 @@ function read_tagset(tagset_directory)
       type = 'tagset', tags = {}, categories = {},
       directory = tagset_directory, category_description = {},
       write=write_tagset, write_cpio=write_cpio,
-      preserve=preserve_state, show=show_like,
+      preserve=preserve_tagset, show=show_like,
       change_archive=change_archive, forget=forget_changes,
       set=set_state, like=like, describe=describe, copy_states=copy_states,
       compare=compare, missing=missing, clone=clone, edit=edit,
