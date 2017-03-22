@@ -19,5 +19,6 @@ show
 skip
 skip_set
 show_uncompressed_sizes
+tagsets
 write
 write_cpio

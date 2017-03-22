@@ -46,7 +46,7 @@ do
    end
 end
 
-function getch(prompt, pattern, default)
+local function getch(prompt, pattern, default)
    os.execute 'stty cbreak -echo'
    local ch
    repeat

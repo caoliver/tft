@@ -7,8 +7,6 @@ local function case_insensitive_less_than(a,b)
    return string.lower(a) < string.lower(b)
 end
 
-function first_field(a, b) return case_insensitive_less_than(a[1], b[1]) end
-
 local indent='  '
 local line_start = #indent
 
@@ -17,7 +15,7 @@ do
    local function sort_matches(set)
       local sorted={}
       for _,v in ipairs(set) do table.insert(sorted, v) end
-      table.sort(sorted)
+      table.sort(sorted,case_insensitive_less_than)
       return sorted
    end
 
@@ -184,8 +182,8 @@ function read_installation(prefix)
    return installed
 end
 
-local tagset_list = {}
-local tagset_next_instance = {}
+tagset_list = {}
+tagset_next_instance = {}
 setmetatable(tagset_list, {__mode = 'k'})
 
 local function get_instance(directory)
@@ -573,12 +571,7 @@ function read_tagset(tagset_directory)
       if self.installation then
 	 self.installation:reset_descriptions()
       end
-      -- Temporarily take the tagset list out of scope, otherwise
-      -- it winds up in the serialization.
-      local stash=tagset_list
-      tagset_list=nil
       destination:write(marshal.encode(shallow_copy))
-      tagset_list=stash
       self.dirty = false
       destination:close()
    end
@@ -776,8 +769,12 @@ end
 
 
 function reconstitute(filename)
+   if not util.readable(filename) then
+      print('Can\'t read '..filename)
+      return
+   end
    local source, err = io.popen('xzcat <'..filename)
-   if not (source) then print(err); return end
+   if not source then print(err); return end
    local tagset = marshal.decode(source:read '*a')
    source:close()
    tagset_list[tagset] = true

@@ -28,6 +28,18 @@ LUAFN(catch_signals)
 }
 #endif
 
+LUAFN(readable)
+{
+    const char *filename = lua_tostring(L, 1);
+    if (access(filename, R_OK) == 0) {
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    lua_pushnil(L);
+    lua_pushinteger(L, errno);
+    return 2;
+}
+
 LUAFN(cputime)
 {
     struct timespec result;
@@ -111,6 +123,7 @@ LUALIB_API int luaopen_util(lua_State *L)
 {
     static const luaL_Reg funcptrs[] = {
 //	FN_ENTRY(catch_signals),
+	FN_ENTRY(readable),
 	FN_ENTRY(realtime),
 	FN_ENTRY(cputime),
 	FN_ENTRY(usleep),
