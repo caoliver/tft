@@ -105,7 +105,7 @@ function edit_tagset(tagset, installation)
       current_category = category_index[last_package.category]
       package_cursor = last_package.category_index
    else
-      last_package = tagset.categories[categories_sorted[1]]
+      last_package = tagset.categories[categories_sorted[1]][1]
       current_category = 1
       package_cursor = 1
    end
@@ -122,7 +122,7 @@ function edit_tagset(tagset, installation)
 	 print 'All categories inhibited.  Goodbye!'
 	 return
       end
-      last_package = tagset.categories[categories_sorted[current_category]]
+      last_package = tagset.categories[categories_sorted[current_category]][1]
       package_cursor = 1
    end
    local package_list = tagset.categories[categories_sorted[current_category]]
