@@ -1,6 +1,6 @@
 dummy= #_G --[[
    script=$(readlink -f "$0")
-   origin=$(readlink -m "$script/..")
+   origin=${script%/*}
    completions=/dev/null
    [ -f $origin/completions ] && completions=$origin/completions
    exec rlwrap -b ":(){}[],+-=&^%$#@\"';|\\"  \
