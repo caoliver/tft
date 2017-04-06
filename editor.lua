@@ -408,8 +408,6 @@ function edit_tagset(tagset, installation)
    local function show_description(description)
       local descr_lines = description and description()
       activate_reportview()
-      add_to_reportview(tostring(description))
-      add_to_reportview()
       if descr_lines then
 	 for i, line in ipairs(descr_lines) do
 	    if i > 1 then add_to_reportview() end
