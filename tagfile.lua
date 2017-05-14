@@ -51,25 +51,7 @@ do
    end
 end
 
-local function cleanuppath(path)
-   if not path then error('Invalid path: '..tostring(path)) end
-   -- Elide superfluous '/'.
-   path = path:gsub('/+', '/')
-   -- Remove backtracks.
-   local newpath
-   while true do
-      local newpath = path:gsub('^/%.%./', '/')
-      if newpath == path then break end
-      path = newpath
-   end
-   while true do
-      local newpath = path:gsub('/[^/]+/%.%./', '/')
-      if newpath == path then break end
-      path = newpath
-   end
-   -- Remove trailing slash if present.
-   return path[#path] == '/'  and path:sub(1,-2) or path
-end
+local cleanuppath = cleanuppath
 
 function read_installation(prefix)
    local directory = cleanuppath((prefix or '')..'/var/log/packages')
