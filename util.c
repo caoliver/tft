@@ -9,24 +9,38 @@
 #include "lua_head.h"
 #include <errno.h>
 #include <glob.h>
+#include <termios.h>
+#include <sys/time.h>
+#include <sys/types.h>
+
 
 uint64_t xxhfd(int fd, uint64_t seed);
 
-#if 0
-void handler()
+LUAFN(getchar)
 {
-    dprintf(2, "Ouch!\n");
-    return;
+    struct termios new, old;
+    char inbuf[16];
+    char *ptr=inbuf;
+    if (tcgetattr(0, &old) < 0)
+	return 0;
+    new=old;
+    tcflush(0, TCIFLUSH);
+    new.c_lflag &= ~(ECHO | ICANON);
+    tcsetattr(0, TCSANOW, &new);
+    for (int i=0; ++i <= sizeof(inbuf); ++ptr) {
+	struct timeval timeout = {0,50000};
+	fd_set infds;
+	FD_ZERO(&infds);
+	FD_SET(0, &infds);
+	if (select(1, &infds, NULL, NULL, i == 1 ? NULL : &timeout) != 1 ||
+	    read(0, ptr, 1) < 1)
+	    break;
+    }
+    tcsetattr(0, TCSANOW, &old);
+    tcflush(0, TCIFLUSH);
+    lua_pushlstring(L, inbuf, ptr - inbuf);
+    return 1;
 }
-
-LUAFN(catch_signals)
-{
-    signal(SIGINT, handler);
-    signal(SIGQUIT, handler);
-    signal(SIGHUP, handler);
-    return 0;
-}
-#endif
 
 LUAFN(readable)
 {
@@ -122,7 +136,7 @@ typedef struct { const char *name; int value; } intconst;
 LUALIB_API int luaopen_util(lua_State *L)
 {
     static const luaL_Reg funcptrs[] = {
-//	FN_ENTRY(catch_signals),
+	FN_ENTRY(getchar),
 	FN_ENTRY(readable),
 	FN_ENTRY(realtime),
 	FN_ENTRY(cputime),

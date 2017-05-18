@@ -28,15 +28,20 @@ do
 end
 
 local function getch(prompt, pattern, default)
-   os.execute 'stty cbreak -echo'
    local ch
    repeat
       io.write(prompt)
-      ch = io.read(1)
-      print(ch == '\n' and '' or ch)
+      io.flush()
+      ch = util.getchar()
+      local outch = '...'
+      if #ch == 1 then
+	 local byte = string.byte(ch)
+	 if byte >= 32 and byte < 127 then outch = ch
+	 elseif ch == '\n' then outch = ''
+	 end
+      end
+      print(outch)
    until not pattern or ch:match(pattern)
-   os.execute('stty -cbreak echo')
-   io.flush()
    return ch == '\n' and default or ch
 end
 
