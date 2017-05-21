@@ -9,17 +9,20 @@ dummy= #_G --[[
 	       lua -i "$script"
 #--]]
 dummy=nil
+
 local origin=(arg and (arg[0]:match '^(.*)/') or '.')
-package.loadlib(origin..'/util.so', 'luaopen_util')()
-package.loadlib(origin..'/elfutil.so', 'luaopen_elfutil')()
+
+package.path=origin..'/?.lua'..';'..package.path
+package.cpath=origin..'/?.so'..';'..package.cpath
+require 'util'
+require 'elfutil'
 marshal=require 'marshal'
-package.loadlib(origin..'/ljcurses.so', 'luaopen_ljcurses')()
-package.loadlib(origin..'/cpiofns.so', 'luaopen_cpiofns')()
-dofile(origin..'/util.lua')
-dofile(origin..'/resolver.lua')
-dofile(origin..'/tagfile.lua')
-dofile(origin..'/editor.lua')
-bad_offers = dofile(origin..'/bad_offers.lua')
+require 'ljcurses'
+require 'cleanpath'
+require 'resolver'
+require 'tagfile'
+require 'editor'
+bad_offers = require 'bad_offers'
 
 -- Local Variables:
 -- mode: lua
