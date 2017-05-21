@@ -992,7 +992,7 @@ function edit_tagset(tagset, installation)
 		  add_to_reportview()
 		  if not tagset.manifest then
 		     if confirm('Read manifest for suggestions? (Y/n): ',
-				'[YyNn\n]', 'y') == 'y' then
+				'[YyNn\n\4]', 'y') == 'y' then
 			add_to_reportview 'Reading manifest...'
 			l.doupdate()
 			tagset.manifest = read_manifest(tagset.directory)

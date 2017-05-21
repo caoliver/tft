@@ -37,7 +37,7 @@ local function getch(prompt, pattern, default)
       if #ch == 1 then
 	 local byte = string.byte(ch)
 	 if byte >= 32 and byte < 127 then outch = ch
-	 elseif ch == '\n' then outch = ''
+	 elseif ch == '\n' or ch == '\4' then outch = ''
 	 end
       end
       print(outch)
@@ -87,8 +87,9 @@ function read_archive(archive_file, myprint, mygetch)
 	 end
       end
       if not removes then return end
-      local confirm = getch('Remove satisfied needs? (y/N):',  '[YyNn\n]', 'n')
-      if confirm:upper() == 'N' then return end
+      local confirm =
+	 getch('Remove satisfied needs? (y/N):',  '[YyNn\n\4]', 'n')
+      if confirm == '\4' or confirm:upper() == 'N' then return end
       for needed in pairs(remove) do
 	 self.needed[needed] = nil
       end
@@ -138,8 +139,8 @@ function read_archive(archive_file, myprint, mygetch)
       if self.archivesums[archivesum] then
 	 local shortname = archive_file:match '([^/]*)$'
 	 print('Copy of archive '..shortname..' is already loaded.')
-	 local confirm = getch('Are you sure? (y/N): ', '[YyNn\n]', 'n')
-	 if confirm:upper() == 'N' then return end
+	 local confirm = getch('Are you sure? (y/N): ', '[YyNn\n\4]', 'n')
+	 if confirm == '\4' or confirm:upper() == 'N' then return end
       end
    
       local elfs = self.elfs
