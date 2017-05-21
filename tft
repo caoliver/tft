@@ -12,7 +12,7 @@ dummy=nil
 local origin=(arg and (arg[0]:match '^(.*)/') or '.')
 package.loadlib(origin..'/util.so', 'luaopen_util')()
 package.loadlib(origin..'/elfutil.so', 'luaopen_elfutil')()
-marshal=package.loadlib(origin..'/lmarshal.so', 'luaopen_marshal')()
+marshal=require 'marshal'
 package.loadlib(origin..'/ljcurses.so', 'luaopen_ljcurses')()
 package.loadlib(origin..'/cpiofns.so', 'luaopen_cpiofns')()
 dofile(origin..'/util.lua')
