@@ -46,7 +46,11 @@ local function getch(prompt, pattern, default)
 end
 
 function read_archive(archive_file, myprint, mygetch)
-   function satisfy(self, root)
+   print = myprint or print
+   getch = mygetch or getch
+   local function satisfy(self, root, myprint, mygetch)
+      print = myprint or print
+      getch = mygetch or getch
       local root = root or ''
       local paths, seen = {}, {}
       for _, line in ipairs { '/lib', '/lib64', '/usr/lib', '/usr/lib64' } do
@@ -127,7 +131,7 @@ function read_archive(archive_file, myprint, mygetch)
       do
 	 local matches=util.glob(archive_file..'.t?z')
 	 if not matches or #matches ~= 1 then
-	    myprint('Can\'t find archive for '..archive_file)
+	    print('Can\'t find archive for '..archive_file)
 	    return
 	 end
 	 archive_file = matches[1]
