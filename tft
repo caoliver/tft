@@ -24,6 +24,9 @@ require 'resolver'
 require 'tagfile'
 require 'editor'
 bad_offers = require 'bad_offers'
+pp=require 'pprint'
+function pt(t,l) io.write(pp.pformat(t, {depth_limit = l or 1})..'\n') end
+
 
 -- Local Variables:
 -- mode: lua
