@@ -7,7 +7,7 @@ dummy= #_G --[[
 	       -f $completions		     \
 	       -c -H $HOME/.${script##*/}_history \
 	       lua -i "$script"
-#--]]
+--]]
 dummy=nil
 
 local origin=(arg and (arg[0]:match '^(.*)/') or '.')
