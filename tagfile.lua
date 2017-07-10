@@ -529,7 +529,16 @@ function read_tagset(tagset_directory)
    local function reset_descriptions(self)
       if not self.directory then return end
       local directory = cleanuppath(self.directory)
-      for _, descr_file in ipairs(util.glob(directory..'/*/*txt')) do
+      local txtfiles = util.glob(directory..'/*/*txt')
+      if not txtfiles then
+	 print('Archive directory '..directory..' is missing.')
+	 local confirm =
+	    getch('Continue saving without it? (y/N): ', '[YyNn\n\4]', 'n')
+	 if confirm == '\4' or confirm:upper() == 'N' then return end
+	 self:change_archive(nil)
+	 txtfiles = {}
+      end
+      for _, descr_file in ipairs(txtfiles) do
 	 local tag = descr_file:match '/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+.txt$'
 	 if not self.tags[tag] then
 	    print('No tagfile record for '..tag..'.  Skipping!')
@@ -538,21 +547,22 @@ function read_tagset(tagset_directory)
 	       make_description(self, descr_file)
 	 end
       end
+      return true
    end
 
    local function preserve_tagset(self, filename)
       if not filename:match(file_pattern) then
 	 filename=filename..file_extension
       end
-      local destination, err = io.popen('xz -1 >'..filename, 'w')
-      if not destination then print(err); return end
       local shallow_copy = {}
       for k,v in pairs(self) do shallow_copy[k] = v end
       trim_editor_cache(shallow_copy)
-      reset_descriptions(self)
+      if not reset_descriptions(self) then return end
       if self.installation then
 	 self.installation:reset_descriptions()
       end
+      local destination, err = io.popen('xz -1 >'..filename, 'w')
+      if not destination then print(err); return end
       destination:write(marshal.encode(shallow_copy))
       self.dirty = false
       destination:close()
