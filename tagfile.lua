@@ -731,7 +731,8 @@ function read_tagset(tagset_directory)
 	 goto next_directory
       end
       for line in tagfile:lines() do
-	 local tag,state = line:match '(.*):([^:]+)$'
+	 if line:match '^[%s]*$' then goto skip_blank end
+	 local tag,state = line:match '[%s]*(.*)[%s]*:[%s]*([^:%s]+)[%s]*$'
 	 if not allowed_states[state] then
 	    print('Bad state for tag '..tag..' in category '..category)
 	 else
@@ -746,6 +747,7 @@ function read_tagset(tagset_directory)
 	    tuple.category_index = #category_table + 1
 	    table.insert(category_table, tuple)
 	 end
+	 ::skip_blank::
       end
       tagfile:close()
       ::next_directory::
