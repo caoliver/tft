@@ -581,6 +581,7 @@ function read_tagset(tagset_directory)
       self.manifest = nil
       self.package_cache = nil
       self.packages_loaded = nil
+      self.directory = directory
       if not directory then return end
       directory = cleanuppath(directory)
       for _,descr_file in ipairs(util.glob(directory..'/*/*txt')) do
