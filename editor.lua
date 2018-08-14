@@ -1,25 +1,3 @@
---[[
--- Simple debug output to other screen when ncurses is active.
-
-function opendebug(ptsnum)
-   if debugout then debugout:close() end
-   debugout=io.open('/dev/pts/'..tostring(ptsnum), 'w')
-   if not debugout then print('debug closed'); return; end
-   print('debug set to /dev/pts/'..tostring(ptsnum))
-end
-
-function debug(...)
-   if not debugout then return end
-   for i=1,select('#', ...) do
-      if i > 1 then debugout:write '\t' end
-      debugout:write(tostring(select(i, ...)))
-   end
-   debugout:write '\r\n'
-end
-
-opendebug(FOO)
---]]
-
 local function make_char_bool(str)
    local booltab = {}
    for ix=1,#str do booltab[str:sub(ix,ix)] = true end
