@@ -23,7 +23,7 @@ do
       local sorted = sort_matches(set.set)
       local i=0
       for _,v in ipairs(sorted) do
-	 if #v > 25 then io.write(' '..v:sub(1,24)..'*')
+	 if #v > 25 then io.write(' ',v:sub(1,24),'*')
 	 else io.write((' %-25s'):format(v))
 	 end
 	 if i==2 then i = 0; io.write '\n'
@@ -295,9 +295,9 @@ function read_tagset(tagset_directory)
 	 end
 	 for _, tuple in ipairs(tags) do
 	    if self.skp_if_not_add and tuple.state ~= 'ADD' then
-	       tagfile:write(tuple.tag..':SKP\n')
+	       tagfile:write(tuple.tag,':SKP\n')
 	    else
-	       tagfile:write(tuple.tag..':'..tuple.state..'\n')
+	       tagfile:write(tuple.tag,':',tuple.state,'\n')
 	    end
 	 end
 	 tagfile:close()
