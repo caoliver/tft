@@ -1,3 +1,4 @@
+#!/bin/bash
 dummy= #_G and nil --[[
    script=$(readlink -f "$0")
    origin=${script%/*}
@@ -24,7 +25,7 @@ require 'tagfile'
 require 'editor'
 bad_offers = require 'bad_offers'
 pp=require 'pprint'
-function pt(t,l) io.write(pp.pformat(t, {depth_limit = l or 1})..'\n') end
+function pt(t,l) io.write(pp.pformat(t, {depth_limit = l or 1}),'\n') end
 
 
 -- Local Variables:
