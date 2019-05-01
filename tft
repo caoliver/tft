@@ -16,7 +16,7 @@ package.path=origin..'/?.lua'..';'..package.path
 package.cpath=origin..'/?.so'..';'..package.cpath
 require 'util'
 require 'elfutil'
-marshal=require 'marshal'
+marshal=require 'freezer'
 require 'ljcurses'
 require 'cpiofns'
 require 'utilfns'
