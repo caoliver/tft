@@ -558,14 +558,17 @@ function read_tagset(tagset_directory)
       for k,v in pairs(self) do shallow_copy[k] = v end
       trim_editor_cache(shallow_copy)
       if not reset_descriptions(self) then return end
-      if self.installation then
-	 self.installation:reset_descriptions()
+      if self.installation
+      and not self.installation:reset_descriptions() then
+	 return
       end
-      local destination, err = io.popen('xz -1 >'..filename, 'w')
+      local destination, err = io.open(filename, 'w')
       if not destination then print(err); return end
-      destination:write(marshal.encode(shallow_copy))
+      destination:write((require 'zstd'.new()):
+	    compress(marshal.encode(shallow_copy)))
       self.dirty = false
       destination:close()
+      return marshal.encode(shallow_copy)
    end
 
    local function change_archive(self, directory)
@@ -768,9 +771,10 @@ function reconstitute(filename)
       print('Can\'t read '..filename)
       return
    end
-   local source, err = io.popen('xzcat <'..filename)
+   local source, err = io.open(filename)
    if not source then print(err); return end
-   local tagset = marshal.decode(source:read '*a')
+   local tagset =
+      marshal.decode((require 'zstd'.new()):decompress(source:read '*a'))
    source:close()
    tagset_list[tagset] = true
    tagset.instance = get_instance(tagset.directory)
