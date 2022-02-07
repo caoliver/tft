@@ -359,6 +359,32 @@ function read_tagset(tagset_directory)
       end
    end
 
+   local function trim(self, installation)
+      if installation.type ~= 'installation' then
+	 print 'Argument must be an installation'
+	 return
+      end
+      local categories_present = {}
+      for tag in pairs(installation.tags) do
+	 if self.tags[tag] then
+	    categories_present[self.tags[tag].category] = true
+	 end
+      end
+      local skip_set = {}
+      for category in pairs(self.categories) do
+	 if not categories_present[category] then skip_set[category] = true end
+      end
+      if next(skip_set) then self.skip_set = skip_set end
+      for category in pairs(categories_present) do
+	 if not skip_set[category] then
+	    for _, package in ipairs(self.categories[category]) do
+	       package.state =
+		  installation.tags[package.tag] and 'ADD' or 'SKP'
+	    end
+	 end
+      end
+   end
+
    local function compare(self, thingie, options)
       options = options or {}
       local show_version_changes = options.show_changes
@@ -692,7 +718,7 @@ function read_tagset(tagset_directory)
 	 skip_set = self.skip_set,
 	 write=write_tagset, write_cpio=write_cpio,
 	 preserve=preserve_tagset, show=show_like,
-	 change_archive=change_archive, forget=forget_changes,
+	 change_archive=change_archive, forget=forget_changes, trim=trim,
 	 set=set_state, like=like, describe=describe, compare=compare,
 	 copy_states=copy_states, missing=missing, clone=clone, edit=edit,
 	 reset_descriptions=reset_descriptions, skip=skip, type='tagset' }
@@ -720,7 +746,7 @@ function read_tagset(tagset_directory)
       type = 'tagset', tags = {}, categories = {},
       directory = tagset_directory, category_description = {},
       write=write_tagset, write_cpio=write_cpio,
-      preserve=preserve_tagset, show=show_like,
+      preserve=preserve_tagset, show=show_like, trim=trim,
       change_archive=change_archive, forget=forget_changes,
       set=set_state, like=like, describe=describe, copy_states=copy_states,
       compare=compare, missing=missing, clone=clone, edit=edit,
