@@ -410,7 +410,7 @@ function read_tagset(tagset_directory)
 	 return common, only_a, only_b
       end
 
-      other_thing =
+      local other_thing =
 	 thingie.type == 'tagset' and 'second tagset' or 'installation'
       print('Comparing tagset to '..other_thing)
       local common, not_in_other, not_in_self =
