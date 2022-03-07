@@ -15,7 +15,7 @@ local excluded_char = make_char_bool '[]<>/? '
 local escapemap = {
    a='M-a', o='M-o', r='M-r', R='M-R', s='M-s', C='M-C', M='M-M',
    l='M-l', L='M-L', x='M-x', n='M-n', N='M-N', ['\14']='M-^N',
-   d='M-d', ['\12']='M-^L', u='M-u'
+   d='M-d', ['\12']='M-^L', u='M-u', ['[28~']='HELP'
 }
 local constrain_state_commands={
    ['M-a']='ADD', ['M-o']='OPT', ['M-r']='REC', ['M-s']='SKP',
@@ -896,7 +896,7 @@ function edit_tagset(tagset, installation)
 	       repaint()
 	    end
 	 -- Help
-	 elseif char == '?' or char == 'KEY_F(15)' then
+	 elseif char == '?' or char == 'KEY_F(15)' or char == 'HELP' then
 	    activate_reportview()
 	    local keyhelp = io.open(origin..'/help-key.txt')
 	    if keyhelp then
