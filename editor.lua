@@ -898,17 +898,13 @@ function edit_tagset(tagset, installation)
 	 -- Help
 	 elseif char == '?' or char == 'KEY_F(15)' or char == 'HELP' then
 	    activate_reportview()
-	    local keyhelp = io.open(origin..'/help-key.txt')
-	    if keyhelp then
-	       local brk = false
-	       for line in keyhelp:lines() do
-		  if brk then add_to_reportview() else brk = true end
-		  add_to_reportview(line)
-	       end
-	       keyhelp:close()
-	    else
-	       add_to_reportview 'No help installed.  :-('
+	    local keyhelp = io.popen('man tft-keys 2>&1')
+	    local brk = false
+	    for line in keyhelp:lines() do
+	       if brk then add_to_reportview() else brk = true end
+	       add_to_reportview(line)
 	    end
+	    keyhelp:close()
 	    reportview_head = 1
 	    redraw_reportview()
 	 -- Change package state

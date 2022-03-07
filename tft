@@ -45,13 +45,7 @@ local function print_error(error)
 end
 for line in io.stdin:lines() do
    if not command and line:lower():match '^[%s]*help[%s]*$' then
-      local help = io.open(origin..'/help-cli.txt')
-      if help then
-	 print(help:read '*a')
-	 help:close()
-      else
-	 print 'No help installed.  :-('
-      end
+      os.execute('man tft')
    else
       if not command then
 	 command = line
