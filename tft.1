@@ -1,0 +1,50 @@
+.TH TFT "1" "Mar 2022" "Christopher Oliver" "User commands"
+.SH NAME
+tft - examine, edit, and generate Slackware tagfile sets.
+.SH SYNOPSIS
+tft [\fI\,STATE_FILE\/\fR]...
+.SH DESCRIPTION
+Tft is a LuaJIT shell extended with a suite of scripts for manipulating
+Slackware tagfiles.  Intermediate editing sessions may be save as
+compressed state files.  If some of these are given on the command line,
+each is restored, and the results are stored in the Lua array \fIsf\fR.
+.SH TFT LUA FUNCTIONS
+.TP
+\fBread_tagset\fR(\fIDIRECTORY\fR\fB)
+Read the tag files from a distribution's package directory or another
+directory of the form \fI\,./*/tagfile\/\fR where the wildcard denotes
+the category names.  The function returns the tagset as a Lua table.
+.TP
+\fBread_installation\fR(\fIROOT_PATH\fR)
+For a given path to a root directory, read the versions of packages installed.
+The function returns the installation description as a Lua table.
+.TP
+TAGSET:\fBedit\fR([\fIINSTALLATION\fR])
+Edit state of packages in tagset with fullscreen CURSES interface.  Optionally
+augmenting with the description of a specified installation.
+.TP
+TAGSET:\fBpreserve\fR(\fIfilename\fR)
+Save the state of a tagset's editing in a compressed state file.  An
+extension of '.slktag' is appended if not present.  Full package
+description text is not saved.
+.TP
+\fBreconstitute\fR(\fIfilename\fR)
+Restore and return a tagfile edit state from a compressed state file.
+An extension of '.slktag' is appended if not present.
+.TP
+\fBtagsets\fR([\fIindex\fR])
+List tagsets present in tft.  Note that this is a weak list, and that any
+tagset not assigned to a variable may vanish when the Lua garbage collector
+runs.  If an index is given, then the tagset at that index is returned.
+.TP
+TAGSET:\fBskip_set\fR(\fI\,category_table\/\fR)
+Arrange that the fullscreen editor will skip over the categories given
+in the table.
+.TP
+TAGSET:\fBwrite_tagset\fR(\fIDIRECTORY\fR\fB)
+Create a directory tree in the form DIRECTORY/* where the wild card denote
+the categories, and save the tagset as individual tagfile.
+.TP
+TAGSET:\fBwrite_cpio\fR(\fIfilename\fR\fB)
+Similar to \fIwrite_tagset\fR, but creates a cpio archive rather than a
+directory.
