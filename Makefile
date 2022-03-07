@@ -1,4 +1,4 @@
-CFLAGS+=-fPIC -I /usr/local/include/luajit-2.0/ -I /usr/include/libelf
+CFLAGS+=-fPIC -I /usr/local/include/lua/5.1 -I /usr/include/libelf
 CFLAGS+=-Wall -Wno-parentheses -O3 -mtune=generic -fomit-frame-pointer -std=c99
 LDFLAGS+=-lluajit-5.1
 
