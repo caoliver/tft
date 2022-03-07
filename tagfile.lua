@@ -584,9 +584,8 @@ function read_tagset(tagset_directory)
       for k,v in pairs(self) do shallow_copy[k] = v end
       trim_editor_cache(shallow_copy)
       if not reset_descriptions(self) then return end
-      if self.installation
-      and not self.installation:reset_descriptions() then
-	 return
+      if self.installation then
+	 self.installation:reset_descriptions()
       end
       local destination, err = io.open(filename, 'w')
       if not destination then print(err); return end
@@ -594,7 +593,6 @@ function read_tagset(tagset_directory)
 	    compress(marshal.encode(shallow_copy)))
       self.dirty = false
       destination:close()
-      return marshal.encode(shallow_copy)
    end
 
    local function change_archive(self, directory)
