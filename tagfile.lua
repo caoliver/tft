@@ -1,7 +1,7 @@
 #!/usr/local/bin/lua
 
-local file_extension='.slktag'
-local file_pattern='%'..file_extension..'$'
+local file_extension='slktag'
+local file_pattern='%.'..file_extension..'$'
 
 local function case_insensitive_less_than(a,b)
    return string.lower(a) < string.lower(b)
@@ -594,7 +594,7 @@ function read_tagset(tagset_directory)
 
    local function preserve_tagset(self, filename)
       if not filename:match(file_pattern) then
-	 filename=filename..file_extension
+	 filename=filename..'.'..file_extension
       end
       local shallow_copy = {}
       for k,v in pairs(self) do shallow_copy[k] = v end
@@ -807,6 +807,9 @@ end
 
 
 function reconstitute(filename)
+   if not filename:match(file_pattern) then
+      filename=filename..'.'..file_extension
+   end
    if not util.readable(filename) then
       print('Can\'t read '..filename)
       return
