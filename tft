@@ -38,6 +38,49 @@ for ix, savefile in ipairs(arg) do
 	 format(savefile:match '([^/]*)$', ix))
 end
 
+io.write '> '
+local command, print_it
+local function print_error(error)
+   print((error:gsub('^[^:]*:(.*)$', 'stdin:%1')))
+end
+for line in io.stdin:lines() do
+   if not command and line:lower():match '^[%s]*help[%s]*$' then
+      local help = io.open(origin..'/help-cli.txt')
+      if help then
+	 print(help:read '*a')
+	 help:close()
+      else
+	 print 'No help installed.  :-('
+      end
+   else
+      if not command then
+	 command = line
+	 print_it = line:match '^=(.*)$'
+	 if print_it then command = 'return '..print_it end
+      else
+	 command = command .. '\n' .. line
+      end
+      local chunk, error = loadstring(command, '')
+      if not chunk then
+	 if not error:find('<eof>') or print_it then
+	    print_error(error)
+	    command, print_it = nil
+	 else
+	    io.write '>> '
+	 end
+      else
+	 (function (success, ...)
+	       if not success then error = ...
+	       elseif print_it then print(...)
+	 end end)(pcall(chunk))
+	 if error then print_error(error) end
+	 command, print_it = nil
+      end
+   end
+   if not command then io.write '> ' end
+end
+
+os.exit(0)
 
 -- Local Variables:
 -- mode: lua
