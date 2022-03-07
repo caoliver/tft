@@ -22,7 +22,7 @@ require 'cpiofns'
 require 'utilfns'
 require 'resolver'
 require 'tagfile'
-require 'editor'
+require 'editor'.set_origin(origin)
 bad_offers = require 'bad_offers'
 pp=require 'pprint'
 function pt(t,l) io.write(pp.pformat(t, {depth_limit = l or 1}),'\n') end

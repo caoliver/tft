@@ -1,3 +1,5 @@
+local origin
+
 local function make_char_bool(str)
    local booltab = {}
    for ix=1,#str do booltab[str:sub(ix,ix)] = true end
@@ -896,13 +898,19 @@ function edit_tagset(tagset, installation)
 	 -- Help
 	 elseif char == '?' or char == 'KEY_F(15)' then
 	    activate_reportview()
-	    for i, line in ipairs {
-	       'Key command help','', 'TO BE DONE'
-				  }
-	    do
-	       if i > 1 then add_to_reportview() end
-	       add_to_reportview(line)
+	    local keyhelp = io.open(origin..'/help-key.txt')
+	    if keyhelp then
+	       local brk = false
+	       for line in keyhelp:lines() do
+		  if brk then add_to_reportview() else brk = true end
+		  add_to_reportview(line)
+	       end
+	       keyhelp:close()
+	    else
+	       add_to_reportview 'No help installed.  :-('
 	    end
+	    reportview_head = 1
+	    redraw_reportview()
 	 -- Change package state
 	 elseif key == k.ctrl_a or char == 'KEY_IC' then
 	    change_state(package_list[package_cursor], 'ADD',
@@ -1062,3 +1070,5 @@ function edit_tagset(tagset, installation)
    end
    print 'Editor finished'
 end
+
+return { set_origin = function (path) origin = path end }
