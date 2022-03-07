@@ -10,7 +10,7 @@ end
 local indent='  '
 local line_start = #indent
 
-local show_matches, show_tuples, describe
+local show_matches, show_tuples, describe, like
 do
    local function sort_matches(set)
       local sorted={}
@@ -19,7 +19,7 @@ do
       return sorted
    end
 
-   show_matches = function (set)
+   function show_matches(set)
       local sorted = sort_matches(set.set)
       local i=0
       for _,v in ipairs(sorted) do
@@ -33,7 +33,7 @@ do
       if i > 0 then io.write '\n' end
    end
 
-   describe = function (thingie, taglist)
+   function describe (thingie, taglist)
       if type(taglist) ~= 'table' then
 	 taglist = sort_matches(thingie:like(taglist).set)
       end
@@ -48,6 +48,33 @@ do
 	 for _,line in ipairs(item.description()) do print(indent..line) end
 	 print ''
       end
+   end
+
+   function like(self, pattern)
+      local set = self.tags
+      if pattern then
+	 set = {}
+	 for tag in pairs(self.tags) do
+	    if tag:match(pattern) then table.insert(set, tag) end
+	 end
+      end
+      local function describer(subset, pattern)
+	 for _, elt in pairs(subset.set) do
+	    if not pattern or elt:match(pattern) then
+	       describe(self, { elt })
+	    end
+	 end
+      end
+      local function like(tbl, pattern)
+	 if not pattern then return(tbl) end
+	 local subset = {}
+	 for _, v in pairs(set) do
+	    if v:match(pattern) then table.insert(subset, v) end
+	 end
+	 return { set=subset, show=show_matches,
+		  describe=describer, like=like }
+      end
+      return { set=set, show=show_matches, describe=describer, like=like }
    end
 end
 
@@ -102,14 +129,6 @@ function read_installation(prefix)
       if check_other(tagset) then tagset:missing(self) end
    end
 
-   local function like(self, pattern)
-      local set = {}
-      for tag in pairs(self.tags) do
-	 if tag:match(pattern) then table.insert(set, tag) end
-      end
-      return { set=set, show=show_matches, describe=describe }
-   end
-
    local function show_like(self, pattern)
       local matches = {}
       for tag, tuple in pairs(self.tags) do
@@ -143,10 +162,15 @@ function read_installation(prefix)
    end
 
    local installed = { type = 'installation',
-		       show=show_like, like = like, tags={},
+		       show=show_like, like=like, tags={},
 		       describe = describe, compare=compare,
 		       missing=missing, reset_descriptions=reset_descriptions }
-   for _,package_file in ipairs(util.glob(directory..'/*')) do
+   local globmatches, err = util.glob(directory..'/*')
+   if not globmatches then
+      print "Can't find installation."
+      return
+   end
+   for _,package_file in ipairs(globmatches) do
       local tag,version,arch,build =
 	 package_file:match '/([^/]+)%-([^-]+)%-([^-]+)%-([^-]+)$'
       if tag then
@@ -192,14 +216,6 @@ function read_tagset(tagset_directory)
 	 tagset_list[self] = nil
 	 tagset_list_changed = true
       end
-   end
-
-   local function like(self, pattern)
-      local set = {}
-      for tag in pairs(self.tags) do
-	 if tag:match(pattern) then table.insert(set, tag) end
-      end
-      return { set=set, show=show_matches }
    end
 
    local function set_state(self, taglist, state)
