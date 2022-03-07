@@ -7,7 +7,7 @@ dummy= #_G and nil --[[
    exec rlwrap -b ":(){}[],+-=&^%$#@\"';|\\"  \
 	       -f $completions		     \
 	       -c -H $HOME/.${script##*/}_history \
-	       lua -i "$script"
+	       lua "$script" "$@"
 --]]
 
 local origin=(arg and (arg[0]:match '^(.*)/') or '.')
@@ -26,6 +26,17 @@ require 'editor'
 bad_offers = require 'bad_offers'
 pp=require 'pprint'
 function pt(t,l) io.write(pp.pformat(t, {depth_limit = l or 1}),'\n') end
+if arg[1] == '-h' then
+   print('Usage: '..arg[0]..' savefile...')
+   os.exit(0)
+end
+print 'Welcome to the Slackware Tagfile Tool'
+sf={}
+for ix, savefile in ipairs(arg) do
+   sf[ix] = reconstitute(savefile)
+   print(('Reading save file %s into sf[%d].'):
+	 format(savefile:match '([^/]*)$', ix))
+end
 
 
 -- Local Variables:
