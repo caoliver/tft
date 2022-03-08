@@ -900,7 +900,8 @@ function edit_tagset(tagset, installation)
 	 -- Help
 	 elseif char == '?' or char == 'KEY_F(15)' or char == 'HELP' then
 	    activate_reportview()
-	    local keyhelp = io.popen('man tft-keys 2>&1')
+	    local keyhelp =
+	       io.popen(('MANWIDTH=%d man tft-keys 2>&1'):format(cols-2))
 	    local brk = false
 	    for line in keyhelp:lines() do
 	       if brk then add_to_reportview() else brk = true end
