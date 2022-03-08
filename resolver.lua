@@ -28,8 +28,8 @@ do
 end
 
 function read_archive(archive_file, myprint, mygetch)
-   print = myprint or print
-   getch = mygetch or getch
+   local print = myprint or print
+   local getch = mygetch or getch
    local function satisfy(self, root, myprint, mygetch)
       print = myprint or print
       getch = mygetch or getch
