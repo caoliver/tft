@@ -12,7 +12,10 @@
 #include <termios.h>
 #include <sys/time.h>
 #include <sys/types.h>
-
+#include <sys/stat.h>
+#include <xxhash.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 uint64_t xxhfd(int fd, uint64_t seed);
 
@@ -111,15 +114,23 @@ LUAFN(glob)
 LUAFN(xxhsum_file)
 {
     int fd;
-    uint64_t result;
-    char outbuf[24];
-
-    if ((fd = open(luaL_checkstring(L, 1), O_RDONLY)) == -1) {
-	lua_pushstring(L, "0");
+    struct stat sb;
+    if ((fd = open(luaL_checkstring(L, 1), O_RDONLY)) == -1 ||
+	fstat(fd, &sb) == -1) {
+	lua_pushstring(L, "X");
 	return 1;
     }
-    result = xxhfd(fd, lua_tointeger(L, 2));
+    
+    void *map = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (map == MAP_FAILED) {
+	close(fd);
+	lua_pushstring(L, "X");
+	return 1;
+    }
     close(fd);
+    uint64_t result = XXH64(map, sb.st_size, 0);
+    munmap(map, sb.st_size);
+    char outbuf[24];
     sprintf(outbuf, "%llX", (unsigned long long)result);
     lua_pushstring(L, outbuf);
     return 1;

@@ -12,8 +12,8 @@ ljcurses.so: ljcurses.o
 elfutil.so: elfutil.o
 	gcc -shared $(LDFLAGS) -lelf -o $@ $<
 
-util.so: util.o xxhash.o
-	gcc -shared $(LDFLAGS) xxhash.o -o $@ $<
+util.so: util.o
+	gcc -shared $(LDFLAGS) -lxxhash -o $@ $<
 
 cpiofns.o: cpiofns.c
 	gcc $(CFLAGS) -c -D_POSIX_C_SOURCE=200809L -o $@ $<
