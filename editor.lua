@@ -435,6 +435,8 @@ function edit_tagset(tagset, installation)
 	 end
 	 redraw_package_list()
       end
+      l.move(3, cols-1)
+      l.vline(b.vline, rows-7)
    end
 
    -- Constraint stuff
