@@ -94,10 +94,12 @@ do
    end
 end
 
-local cleanuppath = cleanuppath
-
 function read_installation(prefix)
-   local directory = cleanuppath((prefix or '')..'/var/log/packages')
+   local directory = util.realpath((prefix or '')..'/var/log/packages')
+   if not directory then
+      print('Invalid root for installation: '..prefix)
+      return
+   end
 
    local function check_other(arg)
       if not arg.type ~= 'tagset' then
@@ -184,7 +186,7 @@ function read_installation(prefix)
 		       missing=missing, reset_descriptions=reset_descriptions }
    local globmatches, err = util.glob(directory..'/*')
    if not globmatches then
-      print "Can't find installation."
+      print("Can't find installation: "..directory)
       return
    end
    for _,package_file in ipairs(globmatches) do
@@ -218,7 +220,14 @@ end
 function read_tagset(tagset_directory)
    local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
 
-   tagset_directory = cleanuppath(tagset_directory)
+   do
+      local directory = util.realpath(tagset_directory)
+      if not directory then
+	 print('Missing tagset directory: '..tagset_directory)
+	 return
+      end
+      tagset_directory = directory
+   end
 
    local function edit(...) return edit_tagset(...) end
 
@@ -588,7 +597,7 @@ function read_tagset(tagset_directory)
 
    local function reset_descriptions(self)
       if not self.directory then return end
-      local directory = cleanuppath(self.directory)
+      local directory = util.realpath(self.directory)
       local txtfiles = util.glob(directory..'/*/*txt')
       if not txtfiles then
 	 print('Archive directory '..directory..' is missing.')
@@ -644,7 +653,7 @@ function read_tagset(tagset_directory)
       self.packages_loaded = nil
       self.directory = directory
       if not directory then return end
-      directory = cleanuppath(directory)
+      directory = util.realpath(directory)
       for _,descr_file in ipairs(util.glob(directory..'/*/*txt')) do
 	 local tag,version,arch,build =
 	    descr_file:match '/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+).txt$'
@@ -783,8 +792,13 @@ function read_tagset(tagset_directory)
       set=set_state, like=like, describe=describe, copy_states=copy_states,
       compare=compare, missing=missing, clone=clone, edit=edit,
       reset_descriptions=reset_descriptions, skip=skip }
+   local tagfiles = util.glob(tagset_directory..'/*/tagfile')
+   if #tagfiles == 0 then
+      print('Directory doesn\'t contain a tagset: '..tagset_directory)
+      return
+   end
    for _, category_tagfile in
-   ipairs(util.glob(tagset_directory..'/*/tagfile')) do
+   ipairs(tagfiles) do
       category_directory = category_tagfile:match '^(/.*)/[^/]*$'
       local category = category_directory:match '([^/]*)$'
       local tagfile = io.open(category_directory..'/tagfile')

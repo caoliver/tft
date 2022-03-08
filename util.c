@@ -16,6 +16,11 @@
 #include <xxhash.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <stdlib.h>
+
+// Where is this defined.
+char *realpath(const char *path, char *resolved_path);
+int usleep(int usec);
 
 uint64_t xxhfd(int fd, uint64_t seed);
 
@@ -142,11 +147,21 @@ LUAFN(lib_exists)
     return 1;
 }
 
+LUAFN(realpath)
+{
+    luaL_checktype(L, 1, LUA_TSTRING);
+    char *path = realpath(lua_tostring(L, 1), NULL);
+    lua_pushstring(L, path);
+    free(path);
+    return 1;
+}
+
 typedef struct { const char *name; int value; } intconst;
 
 LUALIB_API int luaopen_util(lua_State *L)
 {
     static const luaL_Reg funcptrs[] = {
+	FN_ENTRY(realpath),
 	FN_ENTRY(getchar),
 	FN_ENTRY(readable),
 	FN_ENTRY(realtime),

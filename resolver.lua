@@ -1,5 +1,3 @@
-local cleanuppath = cleanuppath
-
 local function case_insensitive_less_than(a,b)
    return string.lower(a) < string.lower(b)
 end
@@ -36,16 +34,19 @@ function read_archive(archive_file, myprint, mygetch)
       local root = root or ''
       local paths, seen = {}, {}
       for _, line in ipairs { '/lib', '/lib64', '/usr/lib', '/usr/lib64' } do
-	 seen[line] = true
-	 table.insert(paths, cleanuppath(root..line))
+	 local pathname = util.realpath(root..line)
+	 if pathname then
+	    seen[pathname] = true
+	    table.insert(paths, pathname)
+	 end
       end
       local ldsoconf = io.open(root..'/etc/ld.so.conf')
       if ldsoconf then
 	 for line in ldsoconf:lines() do
-	    local pathname = root..line
-	    if  not seen[pathname] then
+	    local pathname = util.realpath(root..line)
+	    if pathname and not seen[pathname] then
 	       seen[pathname] = true
-	       table.insert(paths, cleanuppath(pathname))
+	       table.insert(paths, pathname)
 	    end
 	 end
 	 ldsoconf:close()
