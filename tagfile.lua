@@ -10,8 +10,21 @@ end
 local indent='  '
 local line_start = #indent
 
-local show_matches, show_tuples, describe, like
+local show_matches, show_tuples, describe, like, matcher
 do
+   function matcher(pattern)
+      if type(pattern) == 'string' then
+	 return function (str) return string.match(str, pattern) ~= nil end
+      end
+      if type(pattern) == 'table' then
+	 local set = pattern.set or pattern
+	 local pred = {}
+	 for _,v in ipairs(set) do pred[v] = true end
+	 return function (str) return pred[str] end
+      end
+      return function() end
+   end
+
    local function sort_matches(set)
       local sorted={}
       for _,v in ipairs(set) do table.insert(sorted, v) end
@@ -53,14 +66,16 @@ do
    function like(self, pattern)
       local set = self.tags
       if pattern then
+	 local matcher=matcher(pattern)
 	 set = {}
 	 for tag in pairs(self.tags) do
-	    if tag:match(pattern) then table.insert(set, tag) end
+	    if matcher(tag) then table.insert(set, tag) end
 	 end
       end
       local function describer(subset, pattern)
+	 local matcher = matcher(pattern)
 	 for _, elt in pairs(subset.set) do
-	    if not pattern or elt:match(pattern) then
+	    if not pattern or matcher(elt) then
 	       describe(self, { elt })
 	    end
 	 end
@@ -68,8 +83,9 @@ do
       local function like(tbl, pattern)
 	 if not pattern then return(tbl) end
 	 local subset = {}
-	 for _, v in pairs(set) do
-	    if v:match(pattern) then table.insert(subset, v) end
+	 local matcher = matcher(pattern)
+	 for _, v in pairs(tbl.set) do
+	    if matcher(v) then table.insert(subset, v) end
 	 end
 	 return { set=subset, show=show_matches,
 		  describe=describer, like=like }
@@ -131,8 +147,9 @@ function read_installation(prefix)
 
    local function show_like(self, pattern)
       local matches = {}
+      local matcher = matcher(pattern)
       for tag, tuple in pairs(self.tags) do
-	 if not pattern or tag:match(pattern) then
+	 if not pattern or matcher(tag) then
 	    table.insert(matches, tuple)
 	 end
       end
@@ -244,8 +261,9 @@ function read_tagset(tagset_directory)
 
    local function show_like(self, pattern, category, state)
       local matches = {}
+      local matcher = matcher(pattern)
       for tag, tuple in pairs(self.tags) do
-	 if (not pattern or tag:match(pattern)) and
+	 if (not pattern or matcher(tag)) and
 	    (not category or category == tuple.category) and
 	    (not state or state == tuple.state)
 	 then
