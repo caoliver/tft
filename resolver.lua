@@ -25,7 +25,7 @@ do
    end
 end
 
-function read_archive(archive_file, myprint, mygetch)
+function _G.read_archive(archive_file, myprint, mygetch)
    local print = myprint or print
    local getch = mygetch or getch
    local function satisfy(self, root, myprint, mygetch)
@@ -198,12 +198,12 @@ function read_archive(archive_file, myprint, mygetch)
       return conflicts
    end
 
-   create = function()
-      return {
+   function create()
+      return make_object('archive_set', {
 	 archivesums = {}, elfs = {}, sonames = {}, needed = {},
 	 elfpaths = {},
 	 clone = clone, satisfy = satisfy, extend = extend,
-	 cleanup=rm_tmpdir }
+	 cleanup=rm_tmpdir })
    end
 
    local new = create()
@@ -215,7 +215,7 @@ end
 -- Assumes architecture matches.  When is this a bad thing?
 
 
-function read_manifest(archive_directory)
+function _G.read_manifest(archive_directory)
    local archpat = '^||   Package:  '..
       '%./([^/]+)/([^/]+)%-([^/-]+)%-([^/-]+)%-([^/-]+)%.t.z'
    local eoh = '++========================================'
@@ -257,6 +257,10 @@ function read_manifest(archive_directory)
    end
    
    local function get_suggestions (self, archiveset)
+      if object_type[archiveset] ~= 'archive_set' then
+	 print 'Argument must be an archive set'
+	 return
+      end
       local associations = self.associations
       local function bad_offer(needed, offered)
 	 local offer = bad_offers[offered]
@@ -302,6 +306,10 @@ function read_manifest(archive_directory)
    end
    
    local function suggest(self, archiveset, verbose, pattern)
+      if object_type[archiveset] ~= 'archive_set' then
+	 print 'First argument must be an archive set'
+	 return
+      end
       local suggestions = get_suggestions(self, archiveset)
       for _, suggestion in ipairs(suggestions) do
 	 if not pattern or suggestion[1]:match(pattern) then
@@ -320,6 +328,7 @@ function read_manifest(archive_directory)
       end
    end
    
-   return { suggest = suggest, get_suggestions = get_suggestions,
-	    associations = associations }
+   return make_object('manifest',
+		      { suggest = suggest, get_suggestions = get_suggestions,
+			associations = associations })
 end

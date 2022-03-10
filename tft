@@ -20,10 +20,28 @@ marshal=require 'freezer'
 require 'ljcurses'
 require 'cpiofns'
 require 'utilfns'
-require 'resolver'
-require 'tagfile'
-require 'editor'.set_origin(origin)
 bad_offers = require 'bad_offers'
+
+-- The private mods share a private environment.  The idea is to
+-- remove functions from state-save files by using fewer closures,
+-- but not create a lot of global namespace pollution.
+do
+   local private_mods = { 'resolver', 'tagfile', 'editor' }
+   local global = _G
+   local environment = setmetatable({},
+      { __index = function(t,k) t[k]=global[k]; return global[k] end })
+   for _, mod in ipairs(private_mods) do
+      local fn = package.loaders[2](mod)
+      if not type(fn) == 'function' then error(fn) end
+      setfenv(fn, environment)
+      fn()
+   end
+   environment.object_type = setmetatable({}, { __mode = 'k'})
+   function environment.make_object(objtype, object)
+      environment.object_type[object] = objtype
+      return(object)
+   end
+end
 pp=require 'pprint'
 function pt(t,l) io.write(pp.pformat(t, {depth_limit = l or 1}),'\n') end
 if arg[1] == '-h' then
@@ -37,6 +55,9 @@ for ix, savefile in ipairs(arg) do
    print(('Reading save file %s into sf[%d].'):
 	 format(savefile:match '([^/]*)$', ix))
 end
+
+logwin=require'logwin'
+--lw=logwin()
 
 io.write '> '
 local command, print_it

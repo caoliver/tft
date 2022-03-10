@@ -1,5 +1,3 @@
-local origin
-
 local function make_char_bool(str)
    local booltab = {}
    for ix=1,#str do booltab[str:sub(ix,ix)] = true end
@@ -52,9 +50,9 @@ function clone_editor_cache(new_tagset, old_tagset)
    new_tagset.installation = old_tagset.installation
 end
 
-function edit_tagset(tagset, installation)
-   assert(tagset.type == 'tagset', 'Self is not a tagset')
-   assert(not installation or installation.type == 'installation',
+function _G.edit_tagset(tagset, installation)
+   assert(object_type[tagset] == 'tagset', 'Self is not a tagset')
+   assert(not installation or object_type[installation] == 'installation',
 	  'Argument is not an installation')
    if installation == false then
       tagset.installation = nil
@@ -386,7 +384,7 @@ function edit_tagset(tagset, installation)
    end
 
    local function show_description(description)
-      local descr_lines = description and description()
+      local descr_lines = description
       activate_reportview()
       if descr_lines then
 	 for i, line in ipairs(descr_lines) do
@@ -852,16 +850,27 @@ function edit_tagset(tagset, installation)
 	 -- Show description
 	 elseif key == k.ctrl_d then
 	    if #package_list > 0 then
-	       show_description(package_list[package_cursor].description)
+	       local pkg = package_list[package_cursor]
+	       if not pkg.description.text then
+		  pkg.description.text =
+		     make_package_description(tagset, pkg.tag,
+					      pkg.description.file)
+	       end
+	       show_description(pkg.description.text)
 	       repaint()
 	    end
 	 elseif char == 'M-d' then
 	    -- Does the installation description ever change between releases?
 	    if #package_list > 0 and installation then
-	       local entry =
-		  installation.tags[package_list[package_cursor].tag]
+	       local pkg = package_list[package_cursor]
+	       local entry = installation.tags[pkg.tag]
 	       if entry then
-		  show_description(entry.description)
+		  if not entry.description.text then
+		     entry.description.text =
+			make_package_description(installation, pkg.tag,
+						 pkg.description.file)
+		  end
+		  show_description(entry.description.text)
 		  repaint()
 	       end
 	    end
@@ -1069,5 +1078,3 @@ function edit_tagset(tagset, installation)
    end
    print 'Editor finished'
 end
-
-return { set_origin = function (path) origin = path end }

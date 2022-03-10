@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 // Where is this defined.
 char *realpath(const char *path, char *resolved_path);
@@ -116,6 +117,37 @@ LUAFN(glob)
 }
 
 
+LUAFN(file_size)
+{
+    struct stat sb;
+    if (stat(luaL_checkstring(L, 1), &sb) < 0) {
+	lua_pushnil(L);
+	lua_pushinteger(L, errno);
+	return 2;
+    }
+
+    lua_pushnumber(L, sb.st_size);
+    return 1;
+}
+
+// This horrid kluge is needed, 'cos this is secret prior to 5.2, and Mike
+// didn't make this public.
+LUAFN(stream_length)
+{
+    struct {
+	FILE *fp;
+	uint32_t type;
+    } *fptr = lua_touserdata(L, 1);
+    int fd = fileno(fptr->fp);
+    size_t count = 0;
+    char buf[4096];
+    int actual;
+    while ((actual = read(fd, buf, sizeof(buf))) > 0)
+        count += actual;
+    lua_pushnumber(L, count);
+    return 1;
+}
+
 LUAFN(xxhsum_file)
 {
     int fd;
@@ -168,6 +200,8 @@ LUALIB_API int luaopen_util(lua_State *L)
 	FN_ENTRY(cputime),
 	FN_ENTRY(usleep),
 	FN_ENTRY(glob),
+	FN_ENTRY(file_size),
+	FN_ENTRY(stream_length),
 	FN_ENTRY(xxhsum_file),
 	FN_ENTRY(lib_exists),
 	{ NULL, NULL }

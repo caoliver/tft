@@ -10,6 +10,79 @@ end
 local indent='  '
 local line_start = #indent
 
+function make_installation_description(object, tag, descr_file)
+   if object_type[object] == 'installation' then
+      local descr_lines = {}
+      local descr_file = io.open(descr_file)
+      if descr_file then
+	 local descr_match = '^'..tag..':(.*)'
+	 for line in descr_file:lines() do
+	    if line == 'FILE LIST:' then break end
+	    if descr_lines then
+	       local text = line:match(descr_match)
+	       if text then table.insert(descr_lines, text) end
+	    elseif line == 'PACKAGE DESCRIPTION:' then
+	       descr_lines = {}
+	    end
+	 end
+	 descr_file:close()
+	 -- trim trailer
+	 while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
+	    table.remove(descr_lines)
+	 end
+      end
+      return descr_lines
+   end
+end
+
+function make_package_description(object, tag, descr_file)
+   local present_number = 'numfmt --to=iec '
+   local uncompressors = { tgz='zcat', tbz='bzcat', tlz='lzcat',
+			   txz='xzcat' }
+   local descr_lines = {}
+   local package_file = util.glob(descr_file:gsub('txt$', 't?z'))
+   if not package_file or not #package_file == 1 then return end
+   package_file = package_file[1]
+   local descr_file = io.open(descr_file)
+   if not descr_file then return end
+   for line in descr_file:lines() do
+      table.insert(descr_lines, line:match '^[^:]*: ?(.*)$')
+   end
+   while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
+      table.remove(descr_lines)
+   end
+   descr_file:close()
+   if not package_file then
+      insert.table(descr_lines, '* PACKAGE FILE MISSING *')
+      return descr_lines
+   end
+   proc = io.popen(present_number..util.file_size(package_file))
+   if proc then
+      local sizes = ''
+      sizes='Compressed size: '..(proc:read '*l' or 'UNKNOWN')
+      proc:close()
+      if object.show_uncompressed_size then
+	 local uncompress = uncompressors[package_file:match '(...)$']
+	 if not uncompress then
+	    insert.table(descr_lines, "No uncompressor for "..package_file)
+	    return descr_lines
+	 end
+	 local decompress_stream = io.popen(uncompress..' '..package_file)
+	 proc = io.popen(present_number..
+			    util.stream_length(decompress_stream))
+	 decompress_stream:close()
+	 if proc then
+	    sizes = sizes..'  Uncompressed size: '..
+	       (proc:read '*l' or 'UNKNOWN')
+	    proc:close()
+	 end
+      end
+      table.insert(descr_lines, '')
+      table.insert(descr_lines, sizes)
+   end
+   return descr_lines
+end
+
 local show_matches, show_tuples, describe, like, matcher
 do
    function matcher(pattern)
@@ -32,8 +105,8 @@ do
       return sorted
    end
 
-   function show_matches(set)
-      local sorted = sort_matches(set.set)
+   function show_matches(thingy, taglist)
+      local sorted = sort_matches(thingy:like(taglist).set)
       local i=0
       for _,v in ipairs(sorted) do
 	 if #v > 25 then io.write(' ',v:sub(1,24),'*')
@@ -46,24 +119,43 @@ do
       if i > 0 then io.write '\n' end
    end
 
-   function describe (thingie, taglist)
+   local function format_description(object, tag, descr_file)
+      if object_type[object] == 'installation' then
+	 return make_installation_description(object, tag, descr_file)
+      elseif object_type[object] == 'tagset' then
+	 return make_package_description(object, tag, descr_file)
+      end
+   end
+
+   function describe (thingy, taglist)
       if type(taglist) ~= 'table' then
-	 taglist = sort_matches(thingie:like(taglist).set)
+	 taglist = sort_matches(thingy:like(taglist).set)
       end
       if #taglist == 0 then return end
       for _,tag in ipairs(taglist) do
-	 local item = thingie.tags[tag]
+	 local item = thingy.tags[tag]
 	 if not item or not item.description then
 	    print('Can\'t find description for tag '..tag)
 	    return
 	 end
 	 print('Description for tag '..tag..'\n')
-	 for _,line in ipairs(item.description()) do print(indent..line) end
+	 if not item.description.text then
+	    item.description.text =
+	       format_description(thingy, tag, item.description.file)
+	 end
+	 for _,line in ipairs(item.description.text) do print(indent..line) end
 	 print ''
       end
    end
 
    function like(self, pattern)
+      local function show_like(thingy, pattern, verbose)
+	 if verbose then
+	    self:show(thingy:like(pattern).set)
+	 else
+	    show_matches(thingy, pattern)
+	 end
+      end
       local set = self.tags
       if pattern then
 	 local matcher=matcher(pattern)
@@ -87,73 +179,49 @@ do
 	 for _, v in pairs(tbl.set) do
 	    if matcher(v) then table.insert(subset, v) end
 	 end
-	 return { set=subset, show=show_matches,
-		  describe=describer, like=like }
+	 return make_object('like_set',
+			    { set=subset, show=show_like,
+			      describe=describer, like=like })
       end
-      return { set=set, show=show_matches, describe=describer, like=like }
+      return make_object('like_set',
+			 { set=set, show=show_like,
+			   describe=describer, like=like })
    end
 end
 
-function read_installation(prefix)
-   local directory = util.realpath((prefix or '')..'/var/log/packages')
-   if not directory then
-      print('Invalid root for installation: '..prefix)
-      return
-   end
+installation_global_functions = {}
+local installation_metatable = { __index = installation_global_functions }
 
+do
+   local igf = installation_global_functions
    local function check_other(arg)
-      if not arg.type ~= 'tagset' then
-	 print 'Argument must be a tagset'
-	 return false
-      end
-      return true
+      if object_type[arg] == 'tagset' then return true end
+      print 'Argument must be a tagset'
    end
 
-   local function make_description(descr_file, tag)
-      local descr_lines
-      return function()
-	 if not descr_lines then
-	    local descr_file = io.open(descr_file)
-	    if descr_file then
-	       local reading_descr
-	       local descr_match = '^'..tag..':(.*)'
-	       for line in descr_file:lines() do
-		  if line == 'FILE LIST:' then break end
-		  if descr_lines then
-		     local text = line:match(descr_match)
-		     if text then
-			table.insert(descr_lines, text)
-		     end
-		  elseif line == 'PACKAGE DESCRIPTION:' then
-		     descr_lines = {}
-		  end
-	       end
-	       descr_file:close()
-	       -- trim trailer
-	       while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
-		  table.remove(descr_lines)
-	       end
-	    end
-	 end
-	 return descr_lines
-      end
-   end
-
-   local function compare(self, tagset, ...)
+   function igf.compare(self, tagset, ...)
       if check_other(tagset) then tagset:compare(self, ...) end
    end
 
-   local function missing(self, tagset)
+   function igf.missing(self, tagset)
       if check_other(tagset) then tagset:missing(self) end
    end
 
-   local function show_like(self, pattern)
+   igf.like = like
+
+   igf.describe = describe
+
+   function igf.reset_descriptions(self)
+      for tag, package_entry in pairs(self.tags) do
+	 package_entry.description.text = nil
+      end
+   end
+
+   function igf.show(self, pattern)
       local matches = {}
       local matcher = matcher(pattern)
       for tag, tuple in pairs(self.tags) do
-	 if not pattern or matcher(tag) then
-	    table.insert(matches, tuple)
-	 end
+	 if not pattern or matcher(tag) then table.insert(matches, tuple) end
       end
       if #matches == 0 then return end
       table.sort(matches, function (a,b) return a.tag < b.tag end)
@@ -162,8 +230,7 @@ function read_installation(prefix)
 	 if maxpkglen < #tuple.tag then maxpkglen = #tuple.tag end
 	 if maxverlen < #tuple.version then maxverlen = #tuple.version end
       end
-      local format =
-	 indent..'%-'..maxpkglen..'s  %-'..maxverlen..'s  %-6s  %s'
+      local format = indent..'%-'..maxpkglen..'s  %-'..maxverlen..'s  %-6s  %s'
       io.write(format:format('PACKAGE', 'VERSION', 'ARCH',
 			     'BUILD'..'\n'..indent))
       for _=1,maxverlen+maxpkglen+16 do io.write '-' end
@@ -173,17 +240,15 @@ function read_installation(prefix)
 			     tuple.arch, tuple.build))
       end
    end
+end
 
-   local function reset_descriptions(self)
-      for tag, package_entry in pairs(self.tags) do
-	 package_entry.description = make_description(package_entry.path, tag)
-      end
+function _G.read_installation(prefix)
+   local directory = util.realpath((prefix or '')..'/var/log/packages')
+   if not directory then
+      print('Invalid root for installation: '..prefix)
+      return
    end
-
-   local installed = { type = 'installation',
-		       show=show_like, like=like, tags={},
-		       describe = describe, compare=compare,
-		       missing=missing, reset_descriptions=reset_descriptions }
+   local installed = { tags={} }
    local globmatches, err = util.glob(directory..'/*')
    if not globmatches then
       print("Can't find installation: "..directory)
@@ -200,11 +265,11 @@ function read_installation(prefix)
 				 arch = arch,
 				 build = build,
 				 path = package_file,
-				 description =
-				    make_description(package_file, tag) }
+				 description = { file = package_file } }
       end
    end
-   return installed
+   return make_object('installation',
+		      setmetatable(installed, installation_metatable))
 end
 
 tagset_list = {}
@@ -217,21 +282,31 @@ local function get_instance(directory)
    return new_instance
 end
 
-function read_tagset(tagset_directory)
-   local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
+tagset_global_functions = {}
+local tagset_metatable = { __index = tagset_global_functions }
 
-   do
-      local directory = util.realpath(tagset_directory)
-      if not directory then
-	 print('Missing tagset directory: '..tagset_directory)
-	 return
+do
+   local tgf = tagset_global_functions
+   function tgf.skip(self, set)
+      if not set then
+	 self.skip_set = nil
+      else
+	 if type(set) ~= 'table' then
+	    print('Skip set must be a table or nil/false')
+	    return
+	 end
+	 local new_skip_set = {}
+	 for _,category in ipairs(set or {}) do
+	    if not self.categories[category] then
+	       print('Not a valid category: '..tostring(category))
+	       return
+	    end
+	    new_skip_set[category] = true
+	 end
+	 self.skip_set = new_skip_set
       end
-      tagset_directory = directory
    end
-
-   local function edit(...) return edit_tagset(...) end
-
-   local function forget_changes(self, uncache)
+   function tgf.forget(self, uncache)
       self.dirty = false
       for tag,tuple in pairs(self.tags) do
 	 if tuple.state ~= tuple.old_state then
@@ -244,31 +319,35 @@ function read_tagset(tagset_directory)
       end
    end
 
-   local function set_state(self, taglist, state)
-      if not state then
-	 state = 'ADD'
-      else
-	 state = state:upper()
-	 if not allowed_states[state] then
-	    print('Invalid state: '..state)
-	    return
+   function tgf.trim(self, installation)
+      if object_type[installation] ~= 'installation' then
+	 print 'Argument must be an installation'
+	 return
+      end
+      local categories_present = {}
+      for tag in pairs(installation.tags) do
+	 if self.tags[tag] then
+	    categories_present[self.tags[tag].category] = true
 	 end
       end
-      if type(taglist) ~= 'table' then taglist = like(self, taglist).set end
-      for _, tag in ipairs(taglist) do
-	 local tuple = self.tags[tag]
-	 if not tuple then
-	    print('Can\'t find tag '..tag..' in set.  Skipping!')
-	 else
-	    if tuple.state ~= state  then
-	       tuple.state = state;
-	       self.dirty = true
+      local skip_set = {}
+      for category in pairs(self.categories) do
+	 if not categories_present[category] then skip_set[category] = true end
+      end
+      if next(skip_set) then self.skip_set = skip_set end
+      for category in pairs(categories_present) do
+	 if not skip_set[category] then
+	    for _, package in ipairs(self.categories[category]) do
+	       package.state =
+		  installation.tags[package.tag] and 'ADD' or 'SKP'
 	    end
 	 end
       end
    end
 
-   local function show_like(self, pattern, category, state)
+   tgf.like = like
+
+   function tgf.show(self, pattern, category, state)
       local matches = {}
       local matcher = matcher(pattern)
       for tag, tuple in pairs(self.tags) do
@@ -321,7 +400,58 @@ function read_tagset(tagset_directory)
       end
    end
 
-   local function write_tagset(self, directory)
+   function tgf.edit(...) return edit_tagset(...) end
+
+   function tgf.preserve(self, filename)
+      if not filename:match(file_pattern) then
+	 filename=filename..'.'..file_extension
+      end
+      local shallow_copy = {}
+      for k,v in pairs(self) do shallow_copy[k] = v end
+      trim_editor_cache(shallow_copy)
+      if not tgf.reset_descriptions(shallow_copy) then return end
+      if shallow_copy.installation then
+	 local installation = {}
+	 for k,v in pairs(shallow_copy.installation) do
+	    installation[k] = v
+	 end
+	 shallow_copy.installation = installation
+	 self:reset_descriptions(installation)
+      end
+      local destination, err = io.open(filename, 'w')
+      if not destination then print(err); return end
+      destination:write((require 'zstd'.new()):
+	    compress(marshal.encode(shallow_copy)))
+      self.dirty = false
+      destination:close()
+   end
+
+   tgf.describe = describe
+
+   function tgf.reset_descriptions(self)
+      if not self.directory then return end
+      local directory = util.realpath(self.directory)
+      local txtfiles = util.glob(directory..'/*/*txt')
+      if not txtfiles then
+	 print('Archive directory '..directory..' is missing.')
+	 local confirm =
+	    getch('Continue saving without it? (y/N): ', '[YyNn\n\4]', 'n')
+	 if confirm == '\4' or confirm:upper() == 'N' then return end
+	 self:change_archive(nil)
+	 txtfiles = {}
+      end
+      for _, descr_file in ipairs(txtfiles) do
+	 local tag = descr_file:match '/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+.txt$'
+	 if not self.tags[tag] then
+	    print('No tagfile record for '..tag..'.  Skipping!')
+	 else
+	    self.tags[tag].description.text = nil
+	 end
+      end
+      return true
+   end
+
+   function tgf.write_tagset(self, directory)
       if not directory then print 'No directory given'; return; end
       for category, tags in pairs(self.categories) do
 	 local tagdir = directory..'/'..category
@@ -349,7 +479,7 @@ function read_tagset(tagset_directory)
       self.directory = directory
    end
 
-   local function write_cpio(self, cpio_name, omit_trailer)
+   function tgf.write_cpio(self, cpio_name, omit_trailer)
       if cpio_name:match '%.cpio%-nt$' then omit_trailer = true
       else
 	 if not cpio_name:match '%.cpio$' then
@@ -383,8 +513,61 @@ function read_tagset(tagset_directory)
       cpio_file:close()
    end
 
-   local function missing(self, installation)
-      if installation.type ~= 'installation' then
+   function tgf.clone(self, preserve_old_state)
+      local newset = {
+	 tags = {}, categories = {}, directory = self.directory,
+	 category_description = self.category_description,
+	 show_uncompressed_size = self.show_uncompressed_size,
+	 skp_if_not_add = self.skp_if_not_add,
+	 skip_set = self.skip_set
+      }
+      for category,tags in pairs(self.categories) do
+	 local taglist = {}
+	 newset.categories[category] = taglist
+	 for _, tuple in ipairs(tags) do
+	    local newtuple = {}
+	    for k,v in pairs(tuple) do newtuple[k] = v end
+	    if not preserve_old_state then
+	       newtuple.old_state = newtuple.state
+	    end
+	    table.insert(taglist, newtuple)
+	    newset.tags[newtuple.tag] = newtuple
+	 end
+      end
+      tagset_list[newset] = true
+      tagset_list_changed = true
+      newset.instance = get_instance(self.directory)
+      clone_editor_cache(newset, self)
+      return make_object('tagset', setmetatable(newset, tagset_metatable))
+   end
+
+   function tgf.set_state(self, taglist, state)
+      if not state then
+	 state = 'ADD'
+      else
+	 state = state:upper()
+	 if not allowed_states[state] then
+	    print('Invalid state: '..state)
+	    return
+	 end
+      end
+      if type(taglist) ~= 'table' then taglist = like(self, taglist).set end
+      for _, tag in ipairs(taglist) do
+	 local tuple = self.tags[tag]
+	 if not tuple then
+	    print('Can\'t find tag '..tag..' in set.  Skipping!')
+	 else
+	    if tuple.state ~= state  then
+	       tuple.state = state;
+	       self.dirty = true
+	    end
+	 end
+      end
+   end
+
+
+   function tgf.missing(self, installation)
+      if object_type[installation] ~= 'installation' then
 	 print 'Argument must be an installation'
 	 return
       end
@@ -402,39 +585,41 @@ function read_tagset(tagset_directory)
       end
    end
 
-   local function trim(self, installation)
-      if installation.type ~= 'installation' then
-	 print 'Argument must be an installation'
+   function tgf.copy_states(self, source, silent)
+      if object_type[source] ~= 'tagset' then
+	 print 'Source isn\'t a tagset'
 	 return
       end
-      local categories_present = {}
-      for tag in pairs(installation.tags) do
-	 if self.tags[tag] then
-	    categories_present[self.tags[tag].category] = true
-	 end
-      end
-      local skip_set = {}
-      for category in pairs(self.categories) do
-	 if not categories_present[category] then skip_set[category] = true end
-      end
-      if next(skip_set) then self.skip_set = skip_set end
-      for category in pairs(categories_present) do
-	 if not skip_set[category] then
-	    for _, package in ipairs(self.categories[category]) do
-	       package.state =
-		  installation.tags[package.tag] and 'ADD' or 'SKP'
+      for tag, tuple in pairs(self.tags) do
+	 local source_tuple = source.tags[tag]
+	 if source_tuple then
+	    local format = 'Changing state of tag %s from %s to %s.'
+	    if not silent and source_tuple.state ~= tuple.state then
+	       print(format:format(tag, tuple.state, source_tuple.state))
 	    end
+	    tuple.state = source_tuple.state
+	 else
+	    print('Source doesn\'t contain tag '..tag)
 	 end
       end
    end
 
-   local function compare(self, thingie, options)
+   function tgf.compare(self, thingy, options)
       options = options or {}
       local show_version_changes = options.show_changes
       local show_optional = options.show_opts
       local inhibit_recommended = options.no_recs
       local category = options.category
       local pattern = options.pattern
+      local other_thing
+      if object_type[thingy] == 'tagset' then
+	 other_thing = 'second tagset'
+      elseif object_type[thingy] == 'installation' then
+	 other_thing = 'installation'
+      else
+	 print 'First argument must be a tagset or installation'
+	 return
+      end
 
       local function intersection_difference(a, b)
 	 local function check_states(a,b)
@@ -479,16 +664,14 @@ function read_tagset(tagset_directory)
 	 return common, only_a, only_b
       end
 
-      local other_thing =
-	 thingie.type == 'tagset' and 'second tagset' or 'installation'
       print('Comparing tagset to '..other_thing)
       local common, not_in_other, not_in_self =
-	 intersection_difference(self, thingie)
+	 intersection_difference(self, thingy)
       local different_version = {}
       if show_version_changes then
 	 for _,tag in ipairs(common) do
 	    local tuple=self.tags[tag]
-	    local other_tuple=thingie.tags[tag]
+	    local other_tuple=thingy.tags[tag]
 	    if (tuple.version and other_tuple.version and
 		   (tuple.version ~= other_tuple.version or
 		    tuple.build ~= other_tuple.build)) then
@@ -526,119 +709,7 @@ function read_tagset(tagset_directory)
       end
    end
 
-   local make_description
-   do
-      local get_package_size = 'stat -c "%%s" %s |numfmt --to=iec'
-      local get_uncompressed_size =
-	 '%s %s | dd of=/dev/null |& tail -n 1 | cut -f 1 -d " " | '..
-	 'numfmt --to=iec'
-      local uncompressors = { g='zcat', b='bzcat', l='lzcat', x='xzcat' }
-      function make_description(self, descr_file)
-	 local descr_lines
-	 return function ()
-	    local package_file = descr_file:gsub('txt$', 't?z')
-	    local line
-	    do
-	       local package_files = util.glob(package_file)
-	       package_file = nil
-	       if package_files and #package_files == 1 then
-		  package_file = package_files[1]
-	       end
-	    end
-	    if not descr_lines then
-	       local descr_file = io.open(descr_file)
-	       if (descr_file) then
-		  descr_lines = {}
-		  for line in descr_file:lines() do
-		     table.insert(descr_lines, line:match '^[^:]*: ?(.*)$')
-		  end
-		  while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
-		     table.remove(descr_lines)
-		  end
-		  descr_file:close()
-		  if not package_file then
-		     insert.table(descr_lines, '* PACKAGE FILE MISSING *')
-		     goto bailout
-		  end
-		  proc = io.popen(get_package_size:format(package_file))
-		  local uncompress
-		  if proc then
-		     local sizes=''
-		     sizes='Compressed size: '..
-			(proc:read '*l' or 'UNKNOWN')
-		     proc:close()
-		     if self.show_uncompressed_size then
-			local uncompress =
-			   uncompressors[package_file:match '(.).$']
-			if not uncompress then
-			   insert.table(descr_lines,
-					"No uncompressor for "..package_file)
-			   goto bailout
-			end
-			proc =
-			   io.popen(get_uncompressed_size:format(uncompress,
-								 package_file))
-			if proc then
-			   sizes=sizes..'  Uncompressed size: '..
-			      (proc:read '*l' or 'UNKNOWN')
-			   proc:close()
-			end
-		     end
-		     table.insert(descr_lines, '')
-		     table.insert(descr_lines, sizes)
-		  end
-	       end
-	    end
-	    ::bailout::
-	    return descr_lines
-	 end
-      end
-   end
-
-   local function reset_descriptions(self)
-      if not self.directory then return end
-      local directory = util.realpath(self.directory)
-      local txtfiles = util.glob(directory..'/*/*txt')
-      if not txtfiles then
-	 print('Archive directory '..directory..' is missing.')
-	 local confirm =
-	    getch('Continue saving without it? (y/N): ', '[YyNn\n\4]', 'n')
-	 if confirm == '\4' or confirm:upper() == 'N' then return end
-	 self:change_archive(nil)
-	 txtfiles = {}
-      end
-      for _, descr_file in ipairs(txtfiles) do
-	 local tag = descr_file:match '/([^/]+)%-[^/-]+%-[^/-]+%-[^/-]+.txt$'
-	 if not self.tags[tag] then
-	    print('No tagfile record for '..tag..'.  Skipping!')
-	 else
-	    self.tags[tag].description =
-	       make_description(self, descr_file)
-	 end
-      end
-      return true
-   end
-
-   local function preserve_tagset(self, filename)
-      if not filename:match(file_pattern) then
-	 filename=filename..'.'..file_extension
-      end
-      local shallow_copy = {}
-      for k,v in pairs(self) do shallow_copy[k] = v end
-      trim_editor_cache(shallow_copy)
-      if not reset_descriptions(self) then return end
-      if self.installation then
-	 self.installation:reset_descriptions()
-      end
-      local destination, err = io.open(filename, 'w')
-      if not destination then print(err); return end
-      destination:write((require 'zstd'.new()):
-	    compress(marshal.encode(shallow_copy)))
-      self.dirty = false
-      destination:close()
-   end
-
-   local function change_archive(self, directory)
+   function tgf.change_archive(self, directory)
       for _,tuple in pairs(self.tags) do
 	 tuple.version = nil
 	 tuple.arch = nil
@@ -663,8 +734,7 @@ function read_tagset(tagset_directory)
 	    self.tags[tag].version = version
 	    self.tags[tag].arch = arch
 	    self.tags[tag].build = build
-	    self.tags[tag].description =
-	       make_description(self, descr_file)
+	    self.tags[tag].description = { file = descr_file }
 	 end
       end
 
@@ -710,88 +780,23 @@ function read_tagset(tagset_directory)
 	 setpkg:close()
       end
    end
+end
 
-   local function copy_states(self, source, silent)
-      if source.type ~= 'tagset' then
-	 print 'Source isn\'t a tagset'
+function _G.read_tagset(tagset_directory)
+   local allowed_states = {ADD=true, REC=true, OPT=true, SKP=true}
+
+   do
+      local directory = util.realpath(tagset_directory)
+      if not directory then
+	 print('Missing tagset directory: '..tagset_directory)
 	 return
       end
-      for tag, tuple in pairs(self.tags) do
-	 local source_tuple = source.tags[tag]
-	 if source_tuple then
-	    local format = 'Changing state of tag %s from %s to %s.'
-	    if not silent and source_tuple.state ~= tuple.state then
-	       print(format:format(tag, tuple.state, source_tuple.state))
-	    end
-	    tuple.state = source_tuple.state
-	 else
-	    print('Source doesn\'t contain tag '..tag)
-	 end
-      end
-   end
-
-   local function skip(self, set)
-      if not set then
-	 self.skip_set = nil
-      else
-	 if type(set) ~= 'table' then
-	    print('Skip set must be a table or nil/false')
-	    return
-	 end
-	 local new_skip_set = {}
-	 for _,category in ipairs(set or {}) do
-	    if not self.categories[category] then
-	       print('Not a valid category: '..tostring(category))
-	       return
-	    end
-	    new_skip_set[category] = true
-	 end
-	 self.skip_set = new_skip_set
-      end
-   end
-
-   local function clone(self, preserve_old_state)
-      local newset = {
-	 tags = {}, categories = {}, directory = self.directory,
-	 category_description = self.category_description,
-	 show_uncompressed_size = self.show_uncompressed_size,
-	 skp_if_not_add = self.skp_if_not_add,
-	 skip_set = self.skip_set,
-	 write=write_tagset, write_cpio=write_cpio,
-	 preserve=preserve_tagset, show=show_like,
-	 change_archive=change_archive, forget=forget_changes, trim=trim,
-	 set=set_state, like=like, describe=describe, compare=compare,
-	 copy_states=copy_states, missing=missing, clone=clone, edit=edit,
-	 reset_descriptions=reset_descriptions, skip=skip, type='tagset' }
-      for category,tags in pairs(self.categories) do
-	 local taglist = {}
-	 newset.categories[category] = taglist
-	 for _, tuple in ipairs(tags) do
-	    local newtuple = {}
-	    for k,v in pairs(tuple) do newtuple[k] = v end
-	    if not preserve_old_state then
-	       newtuple.old_state = newtuple.state
-	    end
-	    table.insert(taglist, newtuple)
-	    newset.tags[newtuple.tag] = newtuple
-	 end
-      end
-      tagset_list[newset] = true
-      tagset_list_changed = true
-      newset.instance = get_instance(self.directory)
-      clone_editor_cache(newset, self)
-      return newset
+      tagset_directory = directory
    end
 
    local tagset = {
-      type = 'tagset', tags = {}, categories = {},
-      directory = tagset_directory, category_description = {},
-      write=write_tagset, write_cpio=write_cpio,
-      preserve=preserve_tagset, show=show_like, trim=trim,
-      change_archive=change_archive, forget=forget_changes,
-      set=set_state, like=like, describe=describe, copy_states=copy_states,
-      compare=compare, missing=missing, clone=clone, edit=edit,
-      reset_descriptions=reset_descriptions, skip=skip }
+      tags = {}, categories = {},
+      directory = tagset_directory, category_description = {} }
    local tagfiles = util.glob(tagset_directory..'/*/tagfile')
    if #tagfiles == 0 then
       print('Directory doesn\'t contain a tagset: '..tagset_directory)
@@ -828,17 +833,17 @@ function read_tagset(tagset_directory)
       tagfile:close()
       ::next_directory::
    end
+   setmetatable(tagset, tagset_metatable)
    -- Now try to enumerate txt files for packages.  If this is
    -- just a tagset directory, then there will be none.
-   change_archive(tagset, tagset_directory)
+   tagset:change_archive(tagset_directory)
    tagset_list_changed= true
    tagset_list[tagset] = true
    tagset.instance = get_instance(tagset_directory)
-   return tagset
+   return make_object('tagset', tagset)
 end
 
-
-function reconstitute(filename)
+function _G.reconstitute(filename)
    if not filename:match(file_pattern) then
       filename=filename..'.'..file_extension
    end
@@ -853,13 +858,16 @@ function reconstitute(filename)
    source:close()
    tagset_list[tagset] = true
    tagset.instance = get_instance(tagset.directory)
-   return tagset
+   if tagset.installation then
+      setmetatable(tagset.installation, installation_metatable)
+      make_object('installation', tagset.installation)
+   end
+   return make_object('tagset', setmetatable(tagset, tagset_metatable))
 end
-
 
 do
    local tagset_list_last_size=0
-   function tagsets(ix)
+   function _G.tagsets(ix)
       local format = indent..'%d: %3s %s%s'
       local sets = {}
       for tagset,_ in pairs(tagset_list) do table.insert(sets, tagset) end
