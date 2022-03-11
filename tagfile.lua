@@ -41,19 +41,27 @@ function make_package_description(object, tag, descr_file)
 			   txz='xzcat' }
    local descr_lines = {}
    local package_file = util.glob(descr_file:gsub('txt$', 't?z'))
-   if not package_file or not #package_file == 1 then return end
-   package_file = package_file[1]
+   if package_file and #package_file == 1 then
+      package_file = package_file[1]
+   end
    local descr_file = io.open(descr_file)
-   if not descr_file then return end
-   for line in descr_file:lines() do
-      table.insert(descr_lines, line:match '^[^:]*: ?(.*)$')
+   if descr_file then
+      for line in descr_file:lines() do
+	 table.insert(descr_lines, line:match '^[^:]*: ?(.*)$')
+      end
+      while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
+	 table.remove(descr_lines)
+      end
+      descr_file:close()
+   else
+      insert.table(descr_lines, '* PACKAGE DOCUMENTATION UNREADABLE *')
    end
-   while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
-      table.remove(descr_lines)
-   end
-   descr_file:close()
    if not package_file then
       insert.table(descr_lines, '* PACKAGE FILE MISSING *')
+      return descr_lines
+   end
+   if type(package_file) == 'table' then
+      insert.table(descr_lines, '* PACKAGE FILE AMBIGUOUS *')
       return descr_lines
    end
    proc = io.popen(present_number..util.file_size(package_file))
