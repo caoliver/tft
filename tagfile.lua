@@ -30,6 +30,8 @@ function make_installation_description(object, tag, descr_file)
 	 while #descr_lines > 0 and descr_lines[#descr_lines] == '' do
 	    table.remove(descr_lines)
 	 end
+      else
+	 table.insert(descr_lines, '* DESCRIPTION MISSING *')
       end
       return descr_lines
    end
@@ -272,7 +274,6 @@ function _G.read_installation(prefix)
 				 version = version,
 				 arch = arch,
 				 build = build,
-				 path = package_file,
 				 description = { file = package_file } }
       end
    end
@@ -424,7 +425,7 @@ do
 	    installation[k] = v
 	 end
 	 shallow_copy.installation = installation
-	 self:reset_descriptions(installation)
+	 installation_global_functions.reset_descriptions(installation)
       end
       local destination, err = io.open(filename, 'w')
       if not destination then print(err); return end
@@ -439,13 +440,13 @@ do
    function tgf.reset_descriptions(self)
       if not self.directory then return end
       local directory = util.realpath(self.directory)
-      local txtfiles = util.glob(directory..'/*/*txt')
+      local txtfiles = directory and util.glob(directory..'/*/*txt')
       if not txtfiles then
-	 print('Archive directory '..directory..' is missing.')
+	 print('Archive directory '..self.directory..' is missing.')
 	 local confirm =
 	    getch('Continue saving without it? (y/N): ', '[YyNn\n\4]', 'n')
 	 if confirm == '\4' or confirm:upper() == 'N' then return end
-	 self:change_archive(nil)
+	 tgf.change_archive(self, nil)
 	 txtfiles = {}
       end
       for _, descr_file in ipairs(txtfiles) do
@@ -730,8 +731,8 @@ do
       self.manifest = nil
       self.package_cache = nil
       self.packages_loaded = nil
-      self.directory = directory
       if not directory then return end
+      self.directory = directory
       directory = util.realpath(directory)
       for _,descr_file in ipairs(util.glob(directory..'/*/*txt')) do
 	 local tag,version,arch,build =
